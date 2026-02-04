@@ -1,0 +1,8 @@
+[26-Jan-2026 19:24:47 Europe/Zurich] PHP Fatal error:  Uncaught Error: Non-static method SQLite3::enableExceptions() cannot be called statically in /home/stegmann/public_html/Stuhlkreis/api/save.php:40
+Stack trace:
+#0 {main}
+  thrown in /home/stegmann/public_html/Stuhlkreis/api/save.php on line 40
+[26-Jan-2026 19:24:49 Europe/Zurich] PHP Fatal error:  Uncaught Error: Non-static method SQLite3::enableExceptions() cannot be called statically in /home/stegmann/public_html/Stuhlkreis/api/save.php:40
+Stack trace:
+#0 {main}
+  thrown in /home/stegmann/public_html/Stuhlkreis/api/save.php on line 40

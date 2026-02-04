@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stuhlkreis Bestellungen</title>
+    <link rel="icon" href="thumbnail.png" type="image/png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="brand-row">
+        <img class="brand-thumb" src="thumbnail.png" alt="Stuhlkreis Logo" />
+        <div class="brand">Stuhlkreis Bestellungen</div>
+      </div>
+      <a class="site-link" href="https://www.dgtextildruck.de/" target="_blank" rel="noopener noreferrer">
+        https://www.dgtextildruck.de/
+      </a>
+      <a class="site-link" href="https://www.dropbox.com/scl/fo/jkags2rjh755v1trdmqt0/h?rlkey=b1dz71ig8sy6xbjlf372itxq4&dl=0" target="_blank" rel="noopener noreferrer">
+        Druckvorlagen -> Dropbox
+      </a>
+    </header>
+
+    <main class="container">
+      <section class="panel">
+        <div class="controls">
+          <details class="control-group">
+            <summary class="group-title">Datei</summary>
+            <div class="group-body">
+              <label class="file-input">
+                <input id="fileInput" type="file" accept=".xlsx,.xls" />
+                <span>Excel wählen</span>
+              </label>
+              <button id="download" type="button">Excel herunterladen</button>
+              <button id="downloadPdf" type="button">PDF herunterladen</button>
+              <label class="select-field" for="pdfOrientation">
+                PDF-Format
+                <select id="pdfOrientation">
+                  <option value="portrait">Hochformat</option>
+                  <option value="landscape" selected>Querformat</option>
+                </select>
+              </label>
+            </div>
+          </details>
+          <details class="control-group">
+            <summary class="group-title">Tabelle</summary>
+            <div class="group-body">
+              <button id="newSheet" type="button">Neues Tabellenblatt</button>
+              <button id="removeSheet" type="button">Tabellenblatt löschen</button>
+              <button id="addRow" type="button">Zeile hinzufügen</button>
+              <button id="removeRow" type="button">Zeile löschen</button>
+              <button id="addCol" type="button">Spalte hinzufügen</button>
+              <button id="removeCol" type="button">Spalte löschen</button>
+              <button id="toggleLock" type="button">Bestellung abschließen</button>
+            </div>
+          </details>
+          <details class="control-group">
+            <summary class="group-title">Rechnungen</summary>
+            <div class="group-body">
+              <label class="file-input">
+                <input id="invoiceInput" type="file" accept="application/pdf" multiple />
+                <span>Rechnungen hochladen</span>
+              </label>
+              <label class="select-field" for="invoiceSheet">
+                Zu Tabellenblatt
+                <select id="invoiceSheet"></select>
+              </label>
+              <button id="refreshInvoices" type="button">Liste aktualisieren</button>
+              <label class="select-field" for="invoiceSelect">
+                Gespeicherte Rechnungen
+                <select id="invoiceSelect"></select>
+              </label>
+              <div id="invoiceCount" class="meta invoice-count"></div>
+              <label class="select-field" for="invoiceSearch">
+                Suche/Filter
+                <input id="invoiceSearch" type="text" placeholder="Sheet, Dateiname, Datum" />
+              </label>
+              <div class="button-row">
+                <button id="viewInvoice" type="button">Rechnung ansehen</button>
+                <button id="downloadInvoice" type="button">Rechnung herunterladen</button>
+                <button id="deleteInvoice" type="button">Rechnung löschen</button>
+              </div>
+              <div class="invoice-preview">
+                <div class="invoice-preview-title">Vorschau</div>
+                <div id="invoicePreviewList" class="invoice-preview-list"></div>
+                <iframe id="invoicePreview" title="PDF Vorschau"></iframe>
+              </div>
+            </div>
+          </details>
+        </div>
+        <div id="status" class="status">No file loaded yet.</div>
+        <div id="lastSaved" class="meta"></div>
+        <div id="grandTotal" class="meta grand-total"></div>
+        <div class="tabs">
+          <div id="sheetTabs" class="tabs-list" aria-label="Sheet tabs" role="tablist"></div>
+        </div>
+      </section>
+
+      <section class="sheet" aria-live="polite">
+        <table id="sheetTable" class="sheet-table">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      In-browser editing using SheetJS.
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
