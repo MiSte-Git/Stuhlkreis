@@ -27,6 +27,28 @@ const table = document.getElementById("sheetTable");
 const thead = table.querySelector("thead");
 const tbody = table.querySelector("tbody");
 const tabsList = document.getElementById("sheetTabs");
+const sheetSelect = document.getElementById("sheetSelect");
+const showLockedCheckbox = document.getElementById("showLocked");
+const SHOW_LOCKED_KEY = "stuhlkreis.showLocked";
+const isCoarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+
+function readShowLocked() {
+  try {
+    return window.localStorage.getItem(SHOW_LOCKED_KEY) === "1";
+  } catch (error) {
+    return false;
+  }
+}
+
+function writeShowLocked(value) {
+  try {
+    window.localStorage.setItem(SHOW_LOCKED_KEY, value ? "1" : "0");
+  } catch (error) {
+    // ignore storage errors
+  }
+}
+
+let showLockedSheets = readShowLocked();
 
 const DEFAULT_HEADERS = [
   "Name",
@@ -125,10 +147,10 @@ function applySheetLockState() {
     if (th.dataset.fixed === "true") {
       return;
     }
-    th.draggable = !locked;
+    th.draggable = !locked && !isCoarsePointer;
     const indicator = th.querySelector(".drag-indicator");
     if (indicator) {
-      indicator.draggable = !locked;
+      indicator.draggable = !locked && !isCoarsePointer;
     }
     const handle = th.querySelector(".col-resize-handle");
     if (handle) {
@@ -140,10 +162,10 @@ function applySheetLockState() {
     if (row.classList.contains("price-row")) {
       return;
     }
-    row.draggable = !locked;
+    row.draggable = !locked && !isCoarsePointer;
     const indicator = row.querySelector(".row-drag-indicator");
     if (indicator) {
-      indicator.draggable = !locked;
+      indicator.draggable = !locked && !isCoarsePointer;
     }
   });
 
@@ -153,8 +175,8 @@ function applySheetLockState() {
   setActionDisabled(removeColButton, locked);
   setActionDisabled(removeSheetButton, locked);
 
-  tabsList.querySelectorAll(".tab-name").forEach((tabName, index) => {
-    tabName.contentEditable = (!locked && index === activeSheetIndex) ? "true" : "false";
+  tabsList.querySelectorAll(".tab-name").forEach((tabName) => {
+    tabName.contentEditable = locked ? "false" : "true";
   });
 
   if (toggleLockButton) {
@@ -457,6 +479,7 @@ function setupHeaderInteractions() {
         dragSourceIndex = null;
         th.classList.remove("col-dragging");
       });
+      setupTouchReorder(indicator, "col");
     }
     th.addEventListener("dragstart", (event) => {
       if (isActiveSheetLocked()) {
@@ -508,8 +531,12 @@ function setupHeaderInteractions() {
       const handle = document.createElement("span");
       handle.className = "col-resize-handle";
       handle.contentEditable = "false";
-      handle.addEventListener("mousedown", (event) => {
+      handle.addEventListener("pointerdown", (event) => {
+        if (isActiveSheetLocked()) {
+          return;
+        }
         event.preventDefault();
+        event.stopPropagation();
         startResize(event, th);
       });
       th.appendChild(handle);
@@ -552,6 +579,7 @@ function setupRowInteractions() {
         dragRowSourceIndex = null;
         row.classList.remove("row-dragging");
       });
+      setupTouchReorder(indicator, "row");
     }
 
     row.addEventListener("dragstart", (event) => {
@@ -643,20 +671,97 @@ function startResize(event, th) {
   const columnIndex = Array.from(th.parentNode.children).indexOf(th);
   document.body.classList.add("no-select");
 
-  function onMouseMove(moveEvent) {
+  function onPointerMove(moveEvent) {
     const delta = moveEvent.clientX - startX;
     const nextWidth = Math.max(80, startWidth + delta);
     setColumnWidth(columnIndex, nextWidth);
   }
 
-  function onMouseUp() {
-    document.removeEventListener("mousemove", onMouseMove);
-    document.removeEventListener("mouseup", onMouseUp);
+  function onPointerUp() {
+    document.removeEventListener("pointermove", onPointerMove);
+    document.removeEventListener("pointerup", onPointerUp);
+    document.removeEventListener("pointercancel", onPointerUp);
     document.body.classList.remove("no-select");
   }
 
-  document.addEventListener("mousemove", onMouseMove);
-  document.addEventListener("mouseup", onMouseUp);
+  document.addEventListener("pointermove", onPointerMove);
+  document.addEventListener("pointerup", onPointerUp);
+  document.addEventListener("pointercancel", onPointerUp);
+}
+
+function getBodyRows() {
+  return Array.from(tbody.querySelectorAll("tr"))
+    .filter((tr) => !tr.classList.contains("price-row"));
+}
+
+function setupTouchReorder(indicator, kind) {
+  indicator.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" || isActiveSheetLocked()) {
+      return;
+    }
+    event.preventDefault();
+    const source = indicator.closest(kind === "col" ? "th" : "tr");
+    if (!source) {
+      return;
+    }
+    const dragClass = kind === "col" ? "col-dragging" : "row-dragging";
+    let currentTarget = null;
+    source.classList.add(dragClass);
+    try {
+      indicator.setPointerCapture(event.pointerId);
+    } catch (error) {
+      // ignore
+    }
+
+    const findTarget = (x, y) => {
+      const el = document.elementFromPoint(x, y);
+      if (!el) {
+        return null;
+      }
+      if (kind === "col") {
+        const th = el.closest("thead th");
+        return th && th.dataset.fixed !== "true" ? th : null;
+      }
+      const tr = el.closest("tbody tr");
+      return tr && !tr.classList.contains("price-row") ? tr : null;
+    };
+
+    const onMove = (moveEvent) => {
+      const target = findTarget(moveEvent.clientX, moveEvent.clientY);
+      if (target === currentTarget) {
+        return;
+      }
+      currentTarget?.classList.remove("drop-target");
+      currentTarget = target && target !== source ? target : null;
+      currentTarget?.classList.add("drop-target");
+    };
+
+    const finish = (endEvent, apply) => {
+      indicator.removeEventListener("pointermove", onMove);
+      indicator.removeEventListener("pointerup", onUp);
+      indicator.removeEventListener("pointercancel", onCancel);
+      source.classList.remove(dragClass);
+      currentTarget?.classList.remove("drop-target");
+      if (!apply || !currentTarget) {
+        return;
+      }
+      if (kind === "col") {
+        const cells = Array.from(source.parentNode.children);
+        swapColumns(cells.indexOf(source), cells.indexOf(currentTarget));
+      } else {
+        const rows = getBodyRows();
+        moveRow(rows.indexOf(source), rows.indexOf(currentTarget));
+        updateTotals();
+      }
+      autosave();
+    };
+    const onUp = (upEvent) => finish(upEvent, true);
+    const onCancel = (cancelEvent) => finish(cancelEvent, false);
+
+    indicator.addEventListener("pointermove", onMove);
+    indicator.addEventListener("pointerup", onUp);
+    indicator.addEventListener("pointercancel", onCancel);
+  });
 }
 
 function setColumnWidth(columnIndex, width) {
@@ -760,39 +865,81 @@ function saveActiveSheet() {
   sheets[activeSheetIndex].data = collectTableData();
 }
 
+function isSheetVisibleInSwitcher(sheet, index) {
+  return index === activeSheetIndex || !sheet.locked || showLockedSheets;
+}
+
+function renderSheetSelect() {
+  if (!sheetSelect) {
+    return;
+  }
+  sheetSelect.innerHTML = "";
+  let hiddenCount = 0;
+  sheets.forEach((sheet, index) => {
+    if (!isSheetVisibleInSwitcher(sheet, index)) {
+      hiddenCount += 1;
+      return;
+    }
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = sheet.locked ? `${sheet.name} 🔒` : sheet.name;
+    option.selected = index === activeSheetIndex;
+    sheetSelect.appendChild(option);
+  });
+  sheetSelect.disabled = sheetSelect.options.length <= 1;
+  if (showLockedCheckbox) {
+    showLockedCheckbox.checked = showLockedSheets;
+    const lockedCount = sheets.filter((sheet) => sheet.locked).length;
+    const label = showLockedCheckbox.parentElement?.querySelector("span");
+    if (label) {
+      label.textContent = lockedCount
+        ? `Abgeschlossene anzeigen (${lockedCount})`
+        : "Abgeschlossene anzeigen";
+    }
+    showLockedCheckbox.disabled = lockedCount === 0;
+  }
+  return hiddenCount;
+}
+
 function renderTabs() {
   tabsList.innerHTML = "";
-  sheets.forEach((sheet, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
+  const index = activeSheetIndex;
+  const sheet = sheets[index];
+  if (sheet) {
+    const button = document.createElement("div");
     button.className = "tab";
     if (sheet.locked) {
       button.classList.add("is-locked");
       button.title = "Bestellung abgeschlossen";
     }
     button.setAttribute("role", "tab");
-    button.setAttribute("aria-selected", index === activeSheetIndex ? "true" : "false");
+    button.setAttribute("aria-selected", "true");
 
     const nameSpan = document.createElement("span");
     nameSpan.className = "tab-name";
     nameSpan.textContent = sheet.name;
-    nameSpan.contentEditable = (index === activeSheetIndex && !sheet.locked) ? "true" : "false";
-    nameSpan.addEventListener("blur", () => {
-      if (index !== activeSheetIndex) {
-        return;
+    nameSpan.contentEditable = sheet.locked ? "false" : "true";
+    nameSpan.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        nameSpan.blur();
       }
+    });
+    nameSpan.addEventListener("blur", () => {
       if (sheet.locked) {
         nameSpan.textContent = sheet.name;
         return;
       }
       const updated = makeUniqueName(nameSpan.textContent, index);
+      if (updated === sheets[index].name) {
+        nameSpan.textContent = updated;
+        return;
+      }
       sheets[index].name = updated;
       nameSpan.textContent = updated;
+      renderSheetSelect();
       updateInvoiceSheetOptions();
-    });
-
-    button.addEventListener("click", () => {
-      setActiveSheet(index);
+      autosave();
     });
 
     const removeButton = document.createElement("button");
@@ -809,15 +956,40 @@ function renderTabs() {
 
     button.append(nameSpan, removeButton);
     tabsList.appendChild(button);
-  });
+  }
   const addTabButton = document.createElement("button");
   addTabButton.type = "button";
   addTabButton.className = "tab tab-add";
   addTabButton.textContent = "+";
   addTabButton.title = "Neues Tabellenblatt";
+  addTabButton.setAttribute("aria-label", "Neues Tabellenblatt");
   addTabButton.addEventListener("click", () => addSheet());
   tabsList.appendChild(addTabButton);
+  renderSheetSelect();
   updateInvoiceSheetOptions();
+}
+
+if (sheetSelect) {
+  sheetSelect.addEventListener("change", () => {
+    const index = Number(sheetSelect.value);
+    if (Number.isInteger(index) && sheets[index]) {
+      setActiveSheet(index);
+    }
+  });
+}
+
+if (showLockedCheckbox) {
+  showLockedCheckbox.checked = showLockedSheets;
+  showLockedCheckbox.addEventListener("change", () => {
+    showLockedSheets = showLockedCheckbox.checked;
+    writeShowLocked(showLockedSheets);
+    renderSheetSelect();
+  });
+}
+
+function firstUnlockedIndex() {
+  const index = sheets.findIndex((sheet) => !sheet.locked);
+  return index === -1 ? 0 : index;
 }
 
 function removeSheetAt(index, confirmMessage) {
@@ -1724,7 +1896,7 @@ table.addEventListener("paste", (event) => {
 });
 
 table.addEventListener("mousedown", (event) => {
-  if (event.button !== 0) {
+  if (event.button !== 0 || isCoarsePointer) {
     return;
   }
   const target = event.target instanceof HTMLElement ? event.target : event.target?.parentElement;
@@ -1807,8 +1979,8 @@ async function autoload() {
         locked: Boolean(sheet.locked),
         data: normalizeSheetData(sheet.data || []),
       }));
-      activeSheetIndex = 0;
-      buildTable(sheets[0].data);
+      activeSheetIndex = showLockedSheets ? 0 : firstUnlockedIndex();
+      buildTable(sheets[activeSheetIndex].data);
       renderTabs();
       setLastSaved(result.data.updated_at);
       setStatus("Daten geladen.");
