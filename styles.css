@@ -486,7 +486,10 @@ button:active {
   border: 1px dashed transparent;
   cursor: text;
   text-align: center;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+  hyphens: auto;
 }
 
 .sheet-table:not(.is-locked) .header-text:hover {
@@ -711,9 +714,55 @@ button:active {
   position: absolute;
   top: 0;
   right: -1px;
-  width: 8px;
+  width: 10px;
   height: 100%;
   cursor: col-resize;
+  z-index: 1;
+}
+
+.col-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  right: 3px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--line);
+  transition: background 0.15s ease;
+}
+
+.sheet-table th:hover > .col-resize-handle::after,
+.sheet-table th.is-resizing > .col-resize-handle::after {
+  background: var(--accent);
+}
+
+.sheet-table.is-locked .col-resize-handle {
+  display: none;
+}
+
+.add-print-inline {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #fff;
+  color: var(--accent);
+  border: 1px dashed var(--accent);
+  border-radius: 999px;
+  box-shadow: none;
+  min-height: 30px;
+}
+
+.add-print-inline:hover {
+  background: var(--accent);
+  color: #fff;
+  transform: none;
+}
+
+.sheet-table.is-locked .add-print-inline {
+  display: none;
 }
 
 .col-dragging {
@@ -902,7 +951,8 @@ th.drop-target {
 
   .tabs-list .tab-add,
   .tab-remove,
-  .print-remove {
+  .print-remove,
+  .add-print-inline {
     width: auto;
     flex: 0 0 auto;
   }

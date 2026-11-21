@@ -645,7 +645,17 @@ function createPriceLabelCell(value) {
     makeLink(PRICE_NOTE_LINKS[1]),
     ` (ab ${formatCurrency(FREE_SHIPPING_FROM).replace(",00", "")} Bestellwert versandfrei)`
   );
-  cell.append(label, note);
+  const addPrint = document.createElement("button");
+  addPrint.type = "button";
+  addPrint.className = "add-print-inline";
+  addPrint.textContent = "+ Druckposition";
+  addPrint.title = "Druckkosten (z.B. A5 vorne) hinzufügen";
+  addPrint.contentEditable = "false";
+  addPrint.addEventListener("click", (event) => {
+    event.stopPropagation();
+    addPrintRow();
+  });
+  cell.append(label, note, addPrint);
   return cell;
 }
 
@@ -692,7 +702,10 @@ function createArticleHeader(value, index) {
   text.textContent = value ?? "";
   text.setAttribute("aria-label", "Artikelname");
   wrap.append(indicator, text);
-  th.appendChild(wrap);
+  const handle = document.createElement("span");
+  handle.className = "col-resize-handle";
+  handle.title = "Breite ändern";
+  th.append(wrap, handle);
   return th;
 }
 
@@ -754,7 +767,12 @@ function buildTable(data) {
   const nameTh = document.createElement("th");
   nameTh.className = "name-header";
   nameTh.dataset.fixed = "true";
+  nameTh.dataset.col = "0";
   nameTh.textContent = rows[0][0];
+  const nameHandle = document.createElement("span");
+  nameHandle.className = "col-resize-handle";
+  nameHandle.title = "Breite ändern";
+  nameTh.appendChild(nameHandle);
   headRow.appendChild(nameTh);
   for (let i = 0; i < count; i += 1) {
     headRow.appendChild(createArticleHeader(rows[0][qtyCol(i)], i));
@@ -815,6 +833,7 @@ function buildTable(data) {
     tbody.appendChild(createDataRow(row, count));
   });
 
+  applyStoredColumnWidths();
   updateTotals();
   applySheetLockState();
   markCurrentCell();
@@ -1051,15 +1070,74 @@ function moveDataRow(from, to) {
   setStatus("Zeile verschoben.");
 }
 
+const MIN_COL_WIDTH = 48;
+let suppressClickUntil = 0;
+
+function columnWidthKey(col) {
+  const n = Number(col);
+  if (n === 0) {
+    return "__name";
+  }
+  const article = articleOfCol(n);
+  const th = thead.querySelector(`th.article-header[data-article="${article}"] .header-text`);
+  const name = th ? th.textContent.trim() : `#${article}`;
+  return `${name}|${n % 2 === 1 ? "Anzahl" : "Größe"}`;
+}
+
+function rememberColumnWidth(col, width) {
+  const sheet = sheets[activeSheetIndex];
+  if (!sheet) {
+    return;
+  }
+  sheet.colWidths = { ...(sheet.colWidths || {}), [columnWidthKey(col)]: Math.round(width) };
+}
+
+function applyStoredColumnWidths() {
+  const widths = sheets[activeSheetIndex]?.colWidths;
+  if (!widths) {
+    return;
+  }
+  const cols = [0];
+  for (let i = 0; i < thead.querySelectorAll("th.article-header").length; i += 1) {
+    cols.push(qtyCol(i), sizeCol(i));
+  }
+  cols.forEach((col) => {
+    const width = widths[columnWidthKey(col)];
+    if (width) {
+      setColumnWidth(col, width);
+    }
+  });
+}
+
+function columnWidth(col) {
+  const cell = table.querySelector(`th[data-col="${col}"]`) || table.querySelector(`td[data-col="${col}"]:not([colspan="2"])`);
+  return cell ? cell.getBoundingClientRect().width : 80;
+}
+
+// Griff an Name-Überschrift (Spalte 0), Artikel-Überschrift (Anzahl+Größe anteilig) oder Unterspalte
 function startResize(event, th) {
   const startX = event.clientX;
-  const startWidth = th.offsetWidth;
-  const col = th.dataset.col;
+  let cols;
+  if (th.classList.contains("article-header")) {
+    const article = Number(th.dataset.article);
+    cols = [qtyCol(article), sizeCol(article)];
+  } else {
+    cols = [Number(th.dataset.col)];
+  }
+  const startWidths = cols.map(columnWidth);
+  const startTotal = startWidths.reduce((sum, w) => sum + w, 0);
+  const lastWidths = [...startWidths];
   document.body.classList.add("no-select");
+  th.classList.add("is-resizing");
 
   function onPointerMove(moveEvent) {
     const delta = moveEvent.clientX - startX;
-    setColumnWidth(col, Math.max(56, startWidth + delta));
+    const total = Math.max(MIN_COL_WIDTH * cols.length, startTotal + delta);
+    cols.forEach((col, i) => {
+      const width = Math.max(MIN_COL_WIDTH, Math.round(total * (startWidths[i] / startTotal)));
+      lastWidths[i] = width;
+      setColumnWidth(col, width);
+    });
   }
 
   function onPointerUp() {
@@ -1067,6 +1145,10 @@ function startResize(event, th) {
     document.removeEventListener("pointerup", onPointerUp);
     document.removeEventListener("pointercancel", onPointerUp);
     document.body.classList.remove("no-select");
+    th.classList.remove("is-resizing");
+    suppressClickUntil = Date.now() + 300;
+    cols.forEach((col, i) => rememberColumnWidth(col, lastWidths[i]));
+    autosave();
   }
 
   document.addEventListener("pointermove", onPointerMove);
@@ -1081,6 +1163,7 @@ function setColumnWidth(col, width) {
     }
     cell.style.width = `${width}px`;
     cell.style.minWidth = `${width}px`;
+    cell.style.maxWidth = `${width}px`;
   });
 }
 
@@ -2561,6 +2644,9 @@ table.addEventListener("pointerup", (event) => {
 });
 
 table.addEventListener("click", (event) => {
+  if (Date.now() < suppressClickUntil) {
+    return;
+  }
   setCurrentFromElement(event.target);
   const target = event.target instanceof Element ? event.target : null;
   // Klick auf den Rand einer Namenszelle soll trotzdem ins Textfeld springen
@@ -2573,7 +2659,7 @@ table.addEventListener("click", (event) => {
     }
   }
   const articleHeader = target?.closest("th.article-header");
-  if (articleHeader && !target.closest(".header-text") && !target.closest(".drag-indicator")) {
+  if (articleHeader && !target.closest(".header-text, .drag-indicator, .col-resize-handle")) {
     const text = articleHeader.querySelector(".header-text");
     if (text?.isContentEditable && document.activeElement !== text) {
       text.focus();
