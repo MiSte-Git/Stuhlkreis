@@ -379,7 +379,8 @@ function migrateLegacyData(data) {
     .map((_, index) => index)
     .filter((index) => index > 0 && index !== sizeIndex);
   const articleNames = articleCols.length
-    ? articleCols.map((index, i) => String(header[index] ?? "").trim() || `Artikel ${i + 1}`)
+    ? articleCols.map((index, i) =>
+      String(header[index] ?? "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim() || `Artikel ${i + 1}`)
     : ["Artikel 1"];
   const out = createEmptyData(0, articleNames);
   out[0][0] = String(header[0] ?? "").trim() || NAME_LABEL;
@@ -392,15 +393,21 @@ function migrateLegacyData(data) {
     next[0] = String(row[0] ?? "");
     const globalSize = sizeIndex >= 0 ? String(row[sizeIndex] ?? "").trim() : "";
     articleCols.forEach((src, i) => {
-      const value = String(row[src] ?? "").trim();
+      const value = String(row[src] ?? "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
       if (!value) {
         return;
       }
-      if (isPlainNumber(value)) {
-        next[qtyCol(i)] = value;
+      const onlyQty = value.match(/^(\d+)\s*(?:x|×|stk\.?)?$/i);
+      const qtyAndSize = value.match(/^(\d+)\s*(?:x|×|stk\.?)?\s+(.+)$/i);
+      if (onlyQty) {
+        next[qtyCol(i)] = onlyQty[1];
         if (globalSize) {
           next[sizeCol(i)] = globalSize;
         }
+      } else if (qtyAndSize) {
+        // z.B. "1 XL": Anzahl und abweichende Größe in einer Zelle
+        next[qtyCol(i)] = qtyAndSize[1];
+        next[sizeCol(i)] = qtyAndSize[2].trim();
       } else {
         next[sizeCol(i)] = value;
       }
