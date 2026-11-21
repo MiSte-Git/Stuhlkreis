@@ -290,23 +290,40 @@ function setPrintCount(data, count) {
   data[1][0] = count > 0 ? `Druck:${count}` : "";
 }
 
+function isPrintRowIndex(data, rowIndex) {
+  return rowIndex >= 3 && rowIndex < 3 + printCount(data);
+}
+
+// Druckpreis einer Druckzeile: steht in Spalte 1 (ältere Daten: erster Eintrag)
+function printRowPrice(row) {
+  for (let col = 1; col < (row?.length ?? 0); col += 1) {
+    const value = String(row[col] ?? "").trim();
+    if (value) {
+      return value;
+    }
+  }
+  return "";
+}
+
 function dataStart(data) {
   return 3 + printCount(data);
 }
 
 // Stückpreis je Artikel = Preis + alle Druckpositionen (null, wenn nichts eingetragen)
+function printTotal(data) {
+  let total = 0;
+  for (let r = 3; r < 3 + printCount(data); r += 1) {
+    total += parseNumberValue(printRowPrice(data[r])) ?? 0;
+  }
+  return total;
+}
+
 function unitPrices(data) {
   const count = articleCount(data);
-  const prints = printCount(data);
+  const extra = printTotal(data);
   return Array.from({ length: count }, (_, i) => {
-    let total = null;
-    for (let r = 2; r < 3 + prints; r += 1) {
-      const value = parseNumberValue(data[r]?.[qtyCol(i)]);
-      if (value !== null) {
-        total = (total ?? 0) + value;
-      }
-    }
-    return total;
+    const base = parseNumberValue(data[2]?.[qtyCol(i)]);
+    return base === null ? null : base + extra;
   });
 }
 
@@ -468,9 +485,16 @@ function normalizeSheetData(data) {
   if (!isV2Data(rows)) {
     rows = migrateLegacyData(rows);
   }
-  let width = rows.reduce((max, row) => Math.max(max, row.length), 0);
+  const printRowsBefore = printCount(rows);
+  let width = rows.reduce(
+    (max, row, index) => (index >= 3 && index < 3 + printRowsBefore ? max : Math.max(max, row.length)),
+    0
+  );
   if (width < 3) {
     width = 3;
+  }
+  for (let r = 3; r < 3 + printRowsBefore; r += 1) {
+    rows[r] = [rows[r][0] ?? "", printRowPrice(rows[r])];
   }
   if ((width - 1) % 2 !== 0) {
     width += 1;
@@ -799,11 +823,11 @@ function buildTable(data) {
     tr.className = "print-row";
     tr.dataset.print = String(p);
     tr.appendChild(createPrintLabelCell(rows[3 + p][0], p));
-    for (let i = 0; i < count; i += 1) {
-      const cell = createBodyCell(rows[3 + p][qtyCol(i)], qtyCol(i), "print");
-      cell.colSpan = 2;
-      tr.appendChild(cell);
-    }
+    const cell = createBodyCell(rows[3 + p][1], 1, "print");
+    cell.colSpan = Math.max(1, count * 2);
+    cell.classList.add("print-price-cell");
+    cell.title = "Wird auf den Preis jedes Artikels aufgeschlagen";
+    tr.appendChild(cell);
     printTrs.push(tr);
   }
   if (prints) {
@@ -1046,7 +1070,10 @@ function moveArticle(from, to) {
   if (from < 0 || to < 0 || from >= count || to >= count) {
     return;
   }
-  data.forEach((row) => {
+  data.forEach((row, rowIndex) => {
+    if (isPrintRowIndex(data, rowIndex)) {
+      return;
+    }
     const pair = row.splice(qtyCol(from), 2);
     row.splice(qtyCol(to), 0, ...pair);
   });
@@ -1622,7 +1649,7 @@ function addPrintRow() {
     label.focus();
     selectAllIn(label);
   }
-  setStatus("Druckposition hinzugefügt – Bezeichnung (z.B. A5 vorne) und Preise pro Artikel eintragen.");
+  setStatus("Druckposition hinzugefügt – Bezeichnung (z.B. A5 vorne) und Preis eintragen, er wird auf jeden Artikel aufgeschlagen.");
 }
 
 function removePrintRow(index) {
@@ -1662,6 +1689,9 @@ function addColumn(side) {
   position = Math.max(0, Math.min(position, count));
   const name = uniqueArticleName(data);
   data.forEach((row, rowIndex) => {
+    if (isPrintRowIndex(data, rowIndex)) {
+      return;
+    }
     let cells = ["", ""];
     if (rowIndex === 0) {
       cells = [name, ""];
@@ -1702,7 +1732,11 @@ function removeColumn() {
   if (!window.confirm(`Spalte „${name}“ (Anzahl und Größe) wirklich löschen?`)) {
     return;
   }
-  data.forEach((row) => row.splice(qtyCol(article), 2));
+  data.forEach((row, rowIndex) => {
+    if (!isPrintRowIndex(data, rowIndex)) {
+      row.splice(qtyCol(article), 2);
+    }
+  });
   const next = Math.min(article, count - 2);
   commitStructure(data, { rowIndex: currentCell?.rowIndex ?? -1, col: qtyCol(next) });
   setStatus(`Spalte „${name}“ gelöscht.`);
@@ -1815,7 +1849,10 @@ function buildExportSheet(sheet) {
   aoa.push([...data[0], SUM_HEADER]);
   aoa.push(pairRow(data[2][0], articles.map((i) => toNumber(data[2][qtyCol(i)]))));
   for (let p = 0; p < prints; p += 1) {
-    aoa.push(pairRow(data[3 + p][0], articles.map((i) => toNumber(data[3 + p][qtyCol(i)]))));
+    const row = Array(count * 2 + 2).fill("");
+    row[0] = data[3 + p][0];
+    row[1] = toNumber(data[3 + p][1]);
+    aoa.push(row);
   }
   if (prints) {
     aoa.push(pairRow(UNIT_PRICE_LABEL, prices.map((price) => (price === null ? "" : round(price)))));
@@ -1836,8 +1873,14 @@ function buildExportSheet(sheet) {
   }
 
   const merges = [{ s: { r: 0, c: width - 1 }, e: { r: subIndex, c: width - 1 } }];
-  for (let i = 0; i < count; i += 1) {
-    for (let r = 0; r < subIndex; r += 1) {
+  for (let r = 0; r < subIndex; r += 1) {
+    if (r >= 2 && r < 2 + prints) {
+      if (count > 0) {
+        merges.push({ s: { r, c: 1 }, e: { r, c: count * 2 } });
+      }
+      continue;
+    }
+    for (let i = 0; i < count; i += 1) {
       merges.push({ s: { r, c: qtyCol(i) }, e: { r, c: sizeCol(i) } });
     }
   }
@@ -1937,8 +1980,17 @@ function downloadPDF() {
         { content: SUM_HEADER, rowSpan: headerRowCount, styles: { valign: "middle", halign: "right" } },
       ],
       moneyRow(data[2][0], articles.map((i) => data[2][qtyCol(i)])),
-      ...Array.from({ length: prints }, (_, p) =>
-        moneyRow(data[3 + p][0], articles.map((i) => data[3 + p][qtyCol(i)]), { fontStyle: "normal" })),
+      ...Array.from({ length: prints }, (_, p) => {
+        const number = parseNumberValue(data[3 + p][1]);
+        return [
+          { content: data[3 + p][0], styles: { ...priceStyle, halign: "left", fontStyle: "normal" } },
+          {
+            content: number === null ? "" : `${formatCurrency(number)} je Artikel`,
+            colSpan: Math.max(1, count * 2),
+            styles: { ...priceStyle, fontStyle: "normal" },
+          },
+        ];
+      }),
       ...(prints ? [moneyRow(UNIT_PRICE_LABEL, prices.map((price) => (price === null ? "" : price)), { fontStyle: "bold" })] : []),
       ["", ...articles.flatMap(() => [QTY_LABEL, SIZE_LABEL])],
     ];

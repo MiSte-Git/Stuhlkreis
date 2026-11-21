@@ -566,8 +566,19 @@ button:active {
   text-align: center;
 }
 
-.sheet-table .print-row td.price-cell:empty::before {
-  content: "–";
+.sheet-table .print-row td.print-price-cell {
+  text-align: left;
+  padding-left: 16px;
+}
+
+.sheet-table .print-row td.print-price-cell:empty::before {
+  content: "Preis eintragen – wird auf jeden Artikel aufgeschlagen";
+  color: #c7b6a4;
+  font-weight: 400;
+}
+
+.sheet-table .print-row td.col-current:not(.cell-selected) {
+  background-color: #fffaf4;
 }
 
 .print-remove {
