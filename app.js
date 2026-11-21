@@ -558,6 +558,36 @@ function createNameCell(value) {
   return cell;
 }
 
+const PRICE_NOTE_LINKS = [
+  { text: "Druckkosten", href: "https://www.dgtextildruck.de/content/preise-digitaldirektdruck-dtg" },
+  { text: "Versand", href: "https://www.dgtextildruck.de/content/Lieferung" },
+];
+
+function createPriceLabelCell(value) {
+  const cell = createBodyCell("", 0, "label");
+  const label = document.createElement("span");
+  label.className = "cell-text";
+  label.textContent = value ?? PRICE_LABEL;
+  const note = document.createElement("small");
+  note.className = "price-note";
+  const makeLink = ({ text, href }) => {
+    const link = document.createElement("a");
+    link.href = href;
+    link.textContent = text;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    return link;
+  };
+  note.append(
+    "zzgl. ",
+    makeLink(PRICE_NOTE_LINKS[0]),
+    " und ",
+    makeLink(PRICE_NOTE_LINKS[1])
+  );
+  cell.append(label, note);
+  return cell;
+}
+
 function createArticleHeader(value, index) {
   const th = document.createElement("th");
   th.colSpan = 2;
@@ -650,7 +680,7 @@ function buildTable(data) {
   // Preiszeile: eine Zelle pro Artikel (über Anzahl und Größe)
   const priceTr = document.createElement("tr");
   priceTr.className = "price-row";
-  priceTr.appendChild(createBodyCell(rows[2][0], 0, "label"));
+  priceTr.appendChild(createPriceLabelCell(rows[2][0]));
   for (let i = 0; i < count; i += 1) {
     const priceCell = createBodyCell(rows[2][qtyCol(i)], qtyCol(i), "price");
     priceCell.colSpan = 2;
