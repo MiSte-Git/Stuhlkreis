@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="en">
+<html lang="de">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Stuhlkreis Bestellungen</title>
     <link rel="icon" href="thumbnail.png" type="image/png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=2" />
   </head>
   <body>
     <header class="site-header">
@@ -39,7 +39,6 @@
               </label>
               <button id="download" type="button">Excel herunterladen</button>
               <button id="downloadPdf" type="button">PDF herunterladen</button>
-              <button id="printSheet" type="button">Tabelle drucken</button>
               <label class="select-field" for="pdfOrientation">
                 PDF-Format
                 <select id="pdfOrientation">
@@ -56,10 +55,6 @@
               <button id="removeSheet" type="button">Tabellenblatt löschen</button>
               <button id="addRow" type="button">Zeile hinzufügen</button>
               <button id="removeRow" type="button">Zeile löschen</button>
-              <div class="button-row">
-                <button id="copyPasteRow" type="button" title="Zeile kopieren und darunter einfügen">📋➕</button>
-                <button id="deleteSelectedRow" type="button" title="Ausgewählte Zeile löschen">🗑️</button>
-              </div>
               <button id="addCol" type="button">Spalte hinzufügen</button>
               <button id="removeCol" type="button">Spalte löschen</button>
               <button id="toggleLock" type="button">Bestellung abschließen</button>
@@ -103,26 +98,21 @@
         <div id="lastSaved" class="meta"></div>
         <div id="grandTotal" class="meta grand-total"></div>
         <div class="tabs">
-          <div class="tabs-header">
-            <div class="tabs-list" aria-label="Sheet tabs" role="tablist">
-              <div id="sheetTabs" class="tabs-list-inner"></div>
-            </div>
-            <button id="printSheetTabs" class="tab tab-icon" type="button" aria-label="Aktuelles Tabellenblatt drucken" title="Aktuelles Tabellenblatt drucken">
-              🖨️
-            </button>
+          <div class="tabs-switch">
+            <label class="select-field sheet-select-field" for="sheetSelect">
+              Tabellenblatt wechseln
+              <select id="sheetSelect"></select>
+            </label>
+            <label class="toggle-field" for="showLocked">
+              <input id="showLocked" type="checkbox" />
+              <span>Abgeschlossene anzeigen</span>
+            </label>
           </div>
+          <div id="sheetTabs" class="tabs-list" aria-label="Aktives Tabellenblatt" role="tablist"></div>
         </div>
       </section>
 
       <section class="sheet" aria-live="polite">
-        <div id="printTitle" class="print-title" aria-hidden="true"></div>
-        <div id="rowContextMenu" class="context-menu" role="menu" aria-hidden="true">
-          <button id="contextCopyPasteRow" type="button" role="menuitem">Zeile kopieren und darunter einfügen</button>
-          <button id="contextDeleteRow" type="button" role="menuitem">Zeile löschen</button>
-          <div id="contextMenuDividerRows" class="context-menu-divider" aria-hidden="true"></div>
-          <button id="contextLinkSums" type="button" role="menuitem">Summen verknüpfen</button>
-          <button id="contextUnlinkSums" type="button" role="menuitem">Verknüpfung lösen</button>
-        </div>
         <table id="sheetTable" class="sheet-table">
           <thead></thead>
           <tbody></tbody>
@@ -134,9 +124,9 @@
       In-browser editing using SheetJS.
     </footer>
 
-    <script src="vendor/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
   </body>
 </html>

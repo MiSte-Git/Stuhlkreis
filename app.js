@@ -1,10 +1,6 @@
 const fileInput = document.getElementById("fileInput");
 const downloadButton = document.getElementById("download");
 const downloadPdfButton = document.getElementById("downloadPdf");
-const printSheetButton = document.getElementById("printSheet");
-const printSheetTabsButton = document.getElementById("printSheetTabs");
-const copyPasteRowButton = document.getElementById("copyPasteRow");
-const deleteSelectedRowButton = document.getElementById("deleteSelectedRow");
 const pdfOrientationSelect = document.getElementById("pdfOrientation");
 const newSheetButton = document.getElementById("newSheet");
 const addRowButton = document.getElementById("addRow");
@@ -27,25 +23,39 @@ const invoicePreviewList = document.getElementById("invoicePreviewList");
 const lastSavedEl = document.getElementById("lastSaved");
 const grandTotalEl = document.getElementById("grandTotal");
 const statusEl = document.getElementById("status");
-const printTitleEl = document.getElementById("printTitle");
-const rowContextMenu = document.getElementById("rowContextMenu");
-const contextCopyPasteRowButton = document.getElementById("contextCopyPasteRow");
-const contextDeleteRowButton = document.getElementById("contextDeleteRow");
-const contextMenuDividerRows = document.getElementById("contextMenuDividerRows");
-const contextLinkSumsButton = document.getElementById("contextLinkSums");
-const contextUnlinkSumsButton = document.getElementById("contextUnlinkSums");
 const table = document.getElementById("sheetTable");
 const thead = table.querySelector("thead");
 const tbody = table.querySelector("tbody");
 const tabsList = document.getElementById("sheetTabs");
+const sheetSelect = document.getElementById("sheetSelect");
+const showLockedCheckbox = document.getElementById("showLocked");
+const SHOW_LOCKED_KEY = "stuhlkreis.showLocked";
+const isCoarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+
+function readShowLocked() {
+  try {
+    return window.localStorage.getItem(SHOW_LOCKED_KEY) === "1";
+  } catch (error) {
+    return false;
+  }
+}
+
+function writeShowLocked(value) {
+  try {
+    window.localStorage.setItem(SHOW_LOCKED_KEY, value ? "1" : "0");
+  } catch (error) {
+    // ignore storage errors
+  }
+}
+
+let showLockedSheets = readShowLocked();
 
 const DEFAULT_HEADERS = [
   "Name",
   "Größe",
-  "T-Shirt - Weiss/Schwarze Ärmel",
-  "T-Shirt - Heather Grey",
-  "Polo-Shirt - Heather Grey",
-  "Hoodes Zip - Heather Grey",
+  "T-Shirt",
+  "Polo-Shirt",
+  "Hoodes Zip",
 ];
 const DEFAULT_NAMES = [
   "1. Vorstand (Peter)",
@@ -60,21 +70,6 @@ const DEFAULT_NAMES = [
   "Transporter (Klaus)",
   "Zentralglöckner (Sebi)",
 ];
-
-const DEFAULT_SIZES = [
-  "XXL",
-  "L",
-  "XL",
-  "XL",
-  "XL",
-  "XL",
-  "L",
-  "XL",
-  "XL",
-  "L",
-  "XL",
-];
-
 const DEFAULT_ROWS = DEFAULT_NAMES.length;
 const DEFAULT_COLS = DEFAULT_HEADERS.length;
 const SUM_HEADER = "Summe";
@@ -89,9 +84,6 @@ let selectionStart = null;
 let selectionEnd = null;
 let hasDragSelection = false;
 let hasUserSelectedInvoice = false;
-let copiedRowData = null;
-let lastRowIndex = null;
-let lastSumRowIndex = null;
 
 function sanitizeFilename(value) {
   return value
@@ -109,154 +101,8 @@ function buildFilename(extension) {
   return `${clipped}.${extension}`;
 }
 
-function normalizeExcelSheetName(name) {
-  const cleaned = (name || "Sheet")
-    .replace(/[\\/*?:\[\]]/g, "")
-    .trim();
-  return (cleaned || "Sheet").slice(0, 31);
-}
-
 function setStatus(message) {
   statusEl.textContent = message;
-}
-
-function getDataRows() {
-  return Array.from(tbody.querySelectorAll("tr"))
-    .filter((row) => !row.classList.contains("price-row"));
-}
-
-function setLastRowIndexFromCell(cell) {
-  const row = cell?.closest("tr");
-  if (!row || row.classList.contains("price-row")) {
-    return;
-  }
-  const rows = getDataRows();
-  const index = rows.indexOf(row);
-  if (index !== -1) {
-    lastRowIndex = index;
-    if (cell?.classList.contains("sum-cell")) {
-      lastSumRowIndex = index;
-    }
-  }
-}
-
-function extractRowData(row) {
-  const cells = Array.from(row.querySelectorAll("td"))
-    .filter((cell) => !cell.classList.contains("sum-cell"));
-  return cells.map((cell) => {
-    const indicator = cell.querySelector(".row-drag-indicator");
-    if (!indicator) {
-      return cell.textContent.trim();
-    }
-    const text = cell.textContent.replace(indicator.textContent, "");
-    return text.trim();
-  });
-}
-
-function copyRowAt(index) {
-  const rows = getDataRows();
-  const row = rows[index];
-  if (!row) {
-    setStatus("Keine Zeile ausgewählt.");
-    return;
-  }
-  copiedRowData = extractRowData(row);
-  setStatus("Zeile kopiert.");
-}
-
-function copyAndPasteRowBelow(index) {
-  copyRowAt(index);
-  if (!copiedRowData) {
-    return;
-  }
-  pasteRowBelow(index);
-}
-
-function pasteRowBelow(index) {
-  if (!ensureEditable()) {
-    return;
-  }
-  if (!copiedRowData) {
-    setStatus("Keine kopierte Zeile vorhanden.");
-    return;
-  }
-  const rows = getDataRows();
-  const insertAfter = rows[index] || rows[rows.length - 1];
-  const sheet = sheets[activeSheetIndex];
-  if (sheet) {
-    shiftLinkedGroupsOnInsert(sheet, index);
-  }
-  const columnCount = thead.querySelectorAll("th:not([data-fixed])").length || DEFAULT_COLS;
-  const values = Array.from({ length: columnCount }, (_, col) => copiedRowData[col] ?? "");
-  const tr = document.createElement("tr");
-  values.forEach((value) => {
-    tr.appendChild(createBodyCell(value));
-  });
-  tr.appendChild(createSumCell());
-  if (insertAfter?.parentNode) {
-    insertAfter.parentNode.insertBefore(tr, insertAfter.nextSibling);
-  } else {
-    tbody.appendChild(tr);
-  }
-  setupRowInteractions();
-  updateTotals();
-  autosave();
-  setStatus("Zeile eingefügt.");
-}
-
-function openRowContextMenu(x, y, options = {}) {
-  if (!rowContextMenu) {
-    return;
-  }
-  const showSumActions = options.showSumActions === true;
-  const showRowActions = options.showRowActions !== false;
-  const selectedRows = getSelectedSumRowIndexes();
-  const canLink = Array.isArray(selectedRows) && selectedRows.length >= 2;
-  const canUnlink = Array.isArray(selectedRows) ? selectedRows.length >= 1 : lastSumRowIndex !== null;
-  if (contextCopyPasteRowButton) {
-    contextCopyPasteRowButton.style.display = showRowActions ? "block" : "none";
-  }
-  if (contextDeleteRowButton) {
-    contextDeleteRowButton.style.display = showRowActions ? "block" : "none";
-  }
-  if (contextMenuDividerRows) {
-    contextMenuDividerRows.style.display = showRowActions && showSumActions ? "block" : "none";
-  }
-  if (contextLinkSumsButton) {
-    contextLinkSumsButton.disabled = !canLink;
-    contextLinkSumsButton.style.display = showSumActions ? "block" : "none";
-  }
-  if (contextUnlinkSumsButton) {
-    contextUnlinkSumsButton.disabled = !canUnlink;
-    contextUnlinkSumsButton.style.display = showSumActions ? "block" : "none";
-  }
-  const menuWidth = rowContextMenu.offsetWidth || 190;
-  const menuHeight = rowContextMenu.offsetHeight || 120;
-  const maxLeft = window.innerWidth - menuWidth - 8;
-  const maxTop = window.innerHeight - menuHeight - 8;
-  const nextLeft = Math.max(8, Math.min(x, maxLeft));
-  const nextTop = Math.max(8, Math.min(y, maxTop));
-  rowContextMenu.style.left = `${nextLeft}px`;
-  rowContextMenu.style.top = `${nextTop}px`;
-  rowContextMenu.classList.add("is-open");
-  rowContextMenu.setAttribute("aria-hidden", "false");
-}
-
-function closeRowContextMenu() {
-  if (!rowContextMenu) {
-    return;
-  }
-  rowContextMenu.classList.remove("is-open");
-  rowContextMenu.setAttribute("aria-hidden", "true");
-}
-
-function updatePrintTitle() {
-  if (!printTitleEl) {
-    return;
-  }
-  const brand = document.querySelector(".brand")?.textContent?.trim() || "Sheet";
-  const sheetName = sheets[activeSheetIndex]?.name?.trim() || "Sheet";
-  printTitleEl.textContent = `${brand} — ${sheetName}`;
 }
 
 function setLastSaved(timestamp) {
@@ -301,10 +147,10 @@ function applySheetLockState() {
     if (th.dataset.fixed === "true") {
       return;
     }
-    th.draggable = !locked;
+    th.draggable = !locked && !isCoarsePointer;
     const indicator = th.querySelector(".drag-indicator");
     if (indicator) {
-      indicator.draggable = !locked;
+      indicator.draggable = !locked && !isCoarsePointer;
     }
     const handle = th.querySelector(".col-resize-handle");
     if (handle) {
@@ -316,10 +162,10 @@ function applySheetLockState() {
     if (row.classList.contains("price-row")) {
       return;
     }
-    row.draggable = !locked;
+    row.draggable = !locked && !isCoarsePointer;
     const indicator = row.querySelector(".row-drag-indicator");
     if (indicator) {
-      indicator.draggable = !locked;
+      indicator.draggable = !locked && !isCoarsePointer;
     }
   });
 
@@ -329,8 +175,8 @@ function applySheetLockState() {
   setActionDisabled(removeColButton, locked);
   setActionDisabled(removeSheetButton, locked);
 
-  tabsList.querySelectorAll(".tab-name").forEach((tabName, index) => {
-    tabName.contentEditable = (!locked && index === activeSheetIndex) ? "true" : "false";
+  tabsList.querySelectorAll(".tab-name").forEach((tabName) => {
+    tabName.contentEditable = locked ? "false" : "true";
   });
 
   if (toggleLockButton) {
@@ -419,11 +265,7 @@ function createHeaderCell(value) {
   text.contentEditable = "true";
   text.textContent = value ?? "";
 
-  const sortIndicator = document.createElement("span");
-  sortIndicator.className = "sort-indicator";
-  sortIndicator.setAttribute("aria-hidden", "true");
-
-  cell.append(indicator, text, sortIndicator);
+  cell.append(indicator, text);
   return cell;
 }
 
@@ -442,11 +284,7 @@ function createSumCell() {
   cell.className = "sum-cell";
   const valueSpan = document.createElement("span");
   valueSpan.className = "sum-value";
-  const indicator = document.createElement("span");
-  indicator.className = "sum-indicator";
-  indicator.textContent = "Σ";
-  indicator.setAttribute("aria-hidden", "true");
-  cell.append(valueSpan, indicator);
+  cell.appendChild(valueSpan);
   return cell;
 }
 
@@ -467,9 +305,6 @@ function createEmptyData(rows = DEFAULT_ROWS, cols = DEFAULT_COLS) {
     const row = Array(cols).fill("");
     if (cols === DEFAULT_COLS && rowIndex < DEFAULT_NAMES.length) {
       row[0] = DEFAULT_NAMES[rowIndex];
-    }
-    if (cols === DEFAULT_COLS && rowIndex < DEFAULT_SIZES.length) {
-      row[1] = DEFAULT_SIZES[rowIndex];
     }
     return row;
   });
@@ -602,7 +437,6 @@ function buildTable(data) {
   }
   setupRowInteractions();
   updateTotals();
-  updateSortIndicators();
   applySheetLockState();
 }
 
@@ -645,6 +479,7 @@ function setupHeaderInteractions() {
         dragSourceIndex = null;
         th.classList.remove("col-dragging");
       });
+      setupTouchReorder(indicator, "col");
     }
     th.addEventListener("dragstart", (event) => {
       if (isActiveSheetLocked()) {
@@ -667,22 +502,6 @@ function setupHeaderInteractions() {
     th.addEventListener("dragend", () => {
       dragSourceIndex = null;
       th.classList.remove("col-dragging");
-    });
-
-    th.addEventListener("click", (event) => {
-      if (event.target.classList.contains("col-resize-handle")) {
-        return;
-      }
-      if (event.target.classList.contains("header-text") && document.activeElement === event.target) {
-        return;
-      }
-      const headerCells = Array.from(th.parentNode.children)
-        .filter((cell) => cell.dataset.fixed !== "true");
-      const dataIndex = headerCells.indexOf(th);
-      if (dataIndex === -1) {
-        return;
-      }
-      sortByColumn(dataIndex);
     });
 
     th.addEventListener("dragover", (event) => {
@@ -712,8 +531,12 @@ function setupHeaderInteractions() {
       const handle = document.createElement("span");
       handle.className = "col-resize-handle";
       handle.contentEditable = "false";
-      handle.addEventListener("mousedown", (event) => {
+      handle.addEventListener("pointerdown", (event) => {
+        if (isActiveSheetLocked()) {
+          return;
+        }
         event.preventDefault();
+        event.stopPropagation();
         startResize(event, th);
       });
       th.appendChild(handle);
@@ -722,7 +545,8 @@ function setupHeaderInteractions() {
 }
 
 function setupRowInteractions() {
-  const rows = getDataRows();
+  const rows = Array.from(tbody.querySelectorAll("tr"))
+    .filter((row) => !row.classList.contains("price-row"));
   rows.forEach((row) => {
     row.draggable = true;
     row.classList.remove("row-dragging");
@@ -755,6 +579,7 @@ function setupRowInteractions() {
         dragRowSourceIndex = null;
         row.classList.remove("row-dragging");
       });
+      setupTouchReorder(indicator, "row");
     }
 
     row.addEventListener("dragstart", (event) => {
@@ -810,15 +635,12 @@ function moveRow(fromIndex, toIndex) {
   if (isActiveSheetLocked()) {
     return;
   }
-  const rows = getDataRows();
+  const rows = Array.from(tbody.querySelectorAll("tr"))
+    .filter((row) => !row.classList.contains("price-row"));
   const row = rows[fromIndex];
   const target = rows[toIndex];
   if (!row || !target) {
     return;
-  }
-  const sheet = sheets[activeSheetIndex];
-  if (sheet) {
-    shiftLinkedGroupsOnMove(sheet, fromIndex, toIndex);
   }
   if (fromIndex < toIndex) {
     tbody.insertBefore(row, target.nextSibling);
@@ -849,20 +671,97 @@ function startResize(event, th) {
   const columnIndex = Array.from(th.parentNode.children).indexOf(th);
   document.body.classList.add("no-select");
 
-  function onMouseMove(moveEvent) {
+  function onPointerMove(moveEvent) {
     const delta = moveEvent.clientX - startX;
     const nextWidth = Math.max(80, startWidth + delta);
     setColumnWidth(columnIndex, nextWidth);
   }
 
-  function onMouseUp() {
-    document.removeEventListener("mousemove", onMouseMove);
-    document.removeEventListener("mouseup", onMouseUp);
+  function onPointerUp() {
+    document.removeEventListener("pointermove", onPointerMove);
+    document.removeEventListener("pointerup", onPointerUp);
+    document.removeEventListener("pointercancel", onPointerUp);
     document.body.classList.remove("no-select");
   }
 
-  document.addEventListener("mousemove", onMouseMove);
-  document.addEventListener("mouseup", onMouseUp);
+  document.addEventListener("pointermove", onPointerMove);
+  document.addEventListener("pointerup", onPointerUp);
+  document.addEventListener("pointercancel", onPointerUp);
+}
+
+function getBodyRows() {
+  return Array.from(tbody.querySelectorAll("tr"))
+    .filter((tr) => !tr.classList.contains("price-row"));
+}
+
+function setupTouchReorder(indicator, kind) {
+  indicator.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" || isActiveSheetLocked()) {
+      return;
+    }
+    event.preventDefault();
+    const source = indicator.closest(kind === "col" ? "th" : "tr");
+    if (!source) {
+      return;
+    }
+    const dragClass = kind === "col" ? "col-dragging" : "row-dragging";
+    let currentTarget = null;
+    source.classList.add(dragClass);
+    try {
+      indicator.setPointerCapture(event.pointerId);
+    } catch (error) {
+      // ignore
+    }
+
+    const findTarget = (x, y) => {
+      const el = document.elementFromPoint(x, y);
+      if (!el) {
+        return null;
+      }
+      if (kind === "col") {
+        const th = el.closest("thead th");
+        return th && th.dataset.fixed !== "true" ? th : null;
+      }
+      const tr = el.closest("tbody tr");
+      return tr && !tr.classList.contains("price-row") ? tr : null;
+    };
+
+    const onMove = (moveEvent) => {
+      const target = findTarget(moveEvent.clientX, moveEvent.clientY);
+      if (target === currentTarget) {
+        return;
+      }
+      currentTarget?.classList.remove("drop-target");
+      currentTarget = target && target !== source ? target : null;
+      currentTarget?.classList.add("drop-target");
+    };
+
+    const finish = (endEvent, apply) => {
+      indicator.removeEventListener("pointermove", onMove);
+      indicator.removeEventListener("pointerup", onUp);
+      indicator.removeEventListener("pointercancel", onCancel);
+      source.classList.remove(dragClass);
+      currentTarget?.classList.remove("drop-target");
+      if (!apply || !currentTarget) {
+        return;
+      }
+      if (kind === "col") {
+        const cells = Array.from(source.parentNode.children);
+        swapColumns(cells.indexOf(source), cells.indexOf(currentTarget));
+      } else {
+        const rows = getBodyRows();
+        moveRow(rows.indexOf(source), rows.indexOf(currentTarget));
+        updateTotals();
+      }
+      autosave();
+    };
+    const onUp = (upEvent) => finish(upEvent, true);
+    const onCancel = (cancelEvent) => finish(cancelEvent, false);
+
+    indicator.addEventListener("pointermove", onMove);
+    indicator.addEventListener("pointerup", onUp);
+    indicator.addEventListener("pointercancel", onCancel);
+  });
 }
 
 function setColumnWidth(columnIndex, width) {
@@ -905,15 +804,15 @@ function updateTotals() {
   if (!priceRow) {
     return;
   }
-  const dataRows = getDataRows();
   const priceCells = Array.from(priceRow.querySelectorAll("td"))
     .filter((cell) => !cell.classList.contains("sum-cell"));
   const prices = priceCells.map((cell) => parseNumberValue(cell.textContent));
   const hasAnyPrice = prices.some((value) => value !== null);
   let grandTotal = 0;
-  const rowTotals = [];
 
-  dataRows.forEach((row, index) => {
+  Array.from(tbody.querySelectorAll("tr"))
+    .filter((row) => !row.classList.contains("price-row"))
+    .forEach((row) => {
       const cells = Array.from(row.querySelectorAll("td"))
         .filter((cell) => !cell.classList.contains("sum-cell"));
       let rowTotal = 0;
@@ -927,46 +826,15 @@ function updateTotals() {
         }
         rowTotal += price * qty;
       });
-      rowTotals[index] = rowTotal;
       const sumCell = row.querySelector(".sum-cell");
       if (sumCell) {
         const sumValue = sumCell.querySelector(".sum-value");
         if (sumValue) {
           sumValue.textContent = hasAnyPrice ? formatCurrency(rowTotal) : "";
         }
-        sumCell.classList.remove("linked-sum-target");
-        sumCell.classList.remove("linked-sum-hidden");
       }
       grandTotal += rowTotal;
-  });
-
-  const linkedGroups = getLinkedSumGroups(sheets[activeSheetIndex]);
-  linkedGroups.forEach((group) => {
-    const rows = Array.isArray(group.rows) ? group.rows.filter((rowIndex) => rowIndex >= 0 && rowIndex < dataRows.length) : [];
-    if (rows.length < 2) {
-      return;
-    }
-    const targetIndex = Math.max(...rows);
-    rows.forEach((rowIndex) => {
-      if (rowIndex === targetIndex) {
-        return;
-      }
-      const hiddenCell = dataRows[rowIndex]?.querySelector(".sum-cell");
-      if (hiddenCell) {
-        hiddenCell.classList.add("linked-sum-hidden");
-      }
     });
-    const sumCell = dataRows[targetIndex]?.querySelector(".sum-cell");
-    if (!sumCell) {
-      return;
-    }
-    const sumValue = sumCell.querySelector(".sum-value");
-    const groupTotal = rows.reduce((acc, rowIndex) => acc + (rowTotals[rowIndex] || 0), 0);
-    if (sumValue) {
-      sumValue.textContent = hasAnyPrice ? formatCurrency(groupTotal) : "";
-    }
-    sumCell.classList.add("linked-sum-target");
-  });
 
   if (grandTotalEl) {
     grandTotalEl.textContent = hasAnyPrice ? `Gesamtsumme: ${formatCurrency(grandTotal)}` : "";
@@ -997,40 +865,81 @@ function saveActiveSheet() {
   sheets[activeSheetIndex].data = collectTableData();
 }
 
+function isSheetVisibleInSwitcher(sheet, index) {
+  return index === activeSheetIndex || !sheet.locked || showLockedSheets;
+}
+
+function renderSheetSelect() {
+  if (!sheetSelect) {
+    return;
+  }
+  sheetSelect.innerHTML = "";
+  let hiddenCount = 0;
+  sheets.forEach((sheet, index) => {
+    if (!isSheetVisibleInSwitcher(sheet, index)) {
+      hiddenCount += 1;
+      return;
+    }
+    const option = document.createElement("option");
+    option.value = String(index);
+    option.textContent = sheet.locked ? `${sheet.name} 🔒` : sheet.name;
+    option.selected = index === activeSheetIndex;
+    sheetSelect.appendChild(option);
+  });
+  sheetSelect.disabled = sheetSelect.options.length <= 1;
+  if (showLockedCheckbox) {
+    showLockedCheckbox.checked = showLockedSheets;
+    const lockedCount = sheets.filter((sheet) => sheet.locked).length;
+    const label = showLockedCheckbox.parentElement?.querySelector("span");
+    if (label) {
+      label.textContent = lockedCount
+        ? `Abgeschlossene anzeigen (${lockedCount})`
+        : "Abgeschlossene anzeigen";
+    }
+    showLockedCheckbox.disabled = lockedCount === 0;
+  }
+  return hiddenCount;
+}
+
 function renderTabs() {
   tabsList.innerHTML = "";
-  sheets.forEach((sheet, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
+  const index = activeSheetIndex;
+  const sheet = sheets[index];
+  if (sheet) {
+    const button = document.createElement("div");
     button.className = "tab";
     if (sheet.locked) {
       button.classList.add("is-locked");
       button.title = "Bestellung abgeschlossen";
     }
     button.setAttribute("role", "tab");
-    button.setAttribute("aria-selected", index === activeSheetIndex ? "true" : "false");
+    button.setAttribute("aria-selected", "true");
 
     const nameSpan = document.createElement("span");
     nameSpan.className = "tab-name";
     nameSpan.textContent = sheet.name;
-    nameSpan.contentEditable = (index === activeSheetIndex && !sheet.locked) ? "true" : "false";
-    nameSpan.addEventListener("blur", () => {
-      if (index !== activeSheetIndex) {
-        return;
+    nameSpan.contentEditable = sheet.locked ? "false" : "true";
+    nameSpan.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        nameSpan.blur();
       }
+    });
+    nameSpan.addEventListener("blur", () => {
       if (sheet.locked) {
         nameSpan.textContent = sheet.name;
         return;
       }
       const updated = makeUniqueName(nameSpan.textContent, index);
+      if (updated === sheets[index].name) {
+        nameSpan.textContent = updated;
+        return;
+      }
       sheets[index].name = updated;
       nameSpan.textContent = updated;
+      renderSheetSelect();
       updateInvoiceSheetOptions();
-      updatePrintTitle();
-    });
-
-    button.addEventListener("click", () => {
-      setActiveSheet(index);
+      autosave();
     });
 
     const removeButton = document.createElement("button");
@@ -1047,16 +956,40 @@ function renderTabs() {
 
     button.append(nameSpan, removeButton);
     tabsList.appendChild(button);
-  });
+  }
   const addTabButton = document.createElement("button");
   addTabButton.type = "button";
   addTabButton.className = "tab tab-add";
   addTabButton.textContent = "+";
   addTabButton.title = "Neues Tabellenblatt";
+  addTabButton.setAttribute("aria-label", "Neues Tabellenblatt");
   addTabButton.addEventListener("click", () => addSheet());
   tabsList.appendChild(addTabButton);
+  renderSheetSelect();
   updateInvoiceSheetOptions();
-  updatePrintTitle();
+}
+
+if (sheetSelect) {
+  sheetSelect.addEventListener("change", () => {
+    const index = Number(sheetSelect.value);
+    if (Number.isInteger(index) && sheets[index]) {
+      setActiveSheet(index);
+    }
+  });
+}
+
+if (showLockedCheckbox) {
+  showLockedCheckbox.checked = showLockedSheets;
+  showLockedCheckbox.addEventListener("change", () => {
+    showLockedSheets = showLockedCheckbox.checked;
+    writeShowLocked(showLockedSheets);
+    renderSheetSelect();
+  });
+}
+
+function firstUnlockedIndex() {
+  const index = sheets.findIndex((sheet) => !sheet.locked);
+  return index === -1 ? 0 : index;
 }
 
 function removeSheetAt(index, confirmMessage) {
@@ -1161,7 +1094,8 @@ function removeRowAt(index) {
   if (!ensureEditable()) {
     return;
   }
-  const rows = getDataRows();
+  const rows = Array.from(tbody.querySelectorAll("tr"))
+    .filter((row) => !row.classList.contains("price-row"));
   if (rows.length <= 1) {
     setStatus("Mindestens eine Datenzeile muss bleiben.");
     return;
@@ -1173,10 +1107,6 @@ function removeRowAt(index) {
   if (!target) {
     return;
   }
-  const sheet = sheets[activeSheetIndex];
-  if (sheet) {
-    shiftLinkedGroupsOnRemove(sheet, index);
-  }
   target.remove();
   updateTotals();
   setStatus("Zeile gelöscht.");
@@ -1184,7 +1114,8 @@ function removeRowAt(index) {
 }
 
 function removeRow() {
-  const rows = getDataRows();
+  const rows = Array.from(tbody.querySelectorAll("tr"))
+    .filter((row) => !row.classList.contains("price-row"));
   removeRowAt(rows.length - 1);
 }
 
@@ -1248,280 +1179,13 @@ function getCellCoords(cell) {
   if (rowIndex === -1) {
     return null;
   }
-  const cells = Array.from(row.querySelectorAll("td"));
+  const cells = Array.from(row.querySelectorAll("td"))
+    .filter((td) => !td.classList.contains("sum-cell"));
   const colIndex = cells.indexOf(cell);
   if (colIndex === -1) {
     return null;
   }
   return { rowIndex, colIndex };
-}
-
-function getSelectableCells(row) {
-  return Array.from(row.querySelectorAll("td"));
-}
-
-function getSelectedSumRowIndexes() {
-  const selected = Array.from(tbody.querySelectorAll("td.cell-selected"));
-  if (!selected.length) {
-    return [];
-  }
-  const rows = getDataRows();
-  const rowIndexes = new Set();
-  for (const cell of selected) {
-    if (!cell.classList.contains("sum-cell")) {
-      return null;
-    }
-    const row = cell.closest("tr");
-    if (!row || row.classList.contains("price-row")) {
-      return null;
-    }
-    const rowIndex = rows.indexOf(row);
-    if (rowIndex === -1) {
-      return null;
-    }
-    rowIndexes.add(rowIndex);
-  }
-  return Array.from(rowIndexes).sort((a, b) => a - b);
-}
-
-function getSortState(sheet) {
-  if (!sheet) {
-    return { columnIndex: null, direction: "asc" };
-  }
-  if (!sheet.sortState) {
-    sheet.sortState = { columnIndex: null, direction: "asc" };
-  }
-  return sheet.sortState;
-}
-
-function updateSortIndicators() {
-  const headerRow = thead.querySelector("tr");
-  if (!headerRow) {
-    return;
-  }
-  const sheet = sheets[activeSheetIndex];
-  const sortState = getSortState(sheet);
-  const dataHeaders = Array.from(headerRow.children)
-    .filter((cell) => cell.dataset.fixed !== "true");
-  dataHeaders.forEach((cell, index) => {
-    const indicator = cell.querySelector(".sort-indicator");
-    if (!indicator) {
-      return;
-    }
-    if (sortState.columnIndex === index) {
-      indicator.textContent = sortState.direction === "asc" ? "▲" : "▼";
-      cell.setAttribute(
-        "aria-sort",
-        sortState.direction === "asc" ? "ascending" : "descending"
-      );
-      return;
-    }
-    indicator.textContent = "↕";
-    cell.removeAttribute("aria-sort");
-  });
-}
-
-function sortByColumn(columnIndex) {
-  const sheet = sheets[activeSheetIndex];
-  const rows = getDataRows();
-  if (!rows.length) {
-    return;
-  }
-  const sortState = getSortState(sheet);
-  const direction = sortState.columnIndex === columnIndex && sortState.direction === "asc"
-    ? "desc"
-    : "asc";
-
-  const rowData = rows.map((row, index) => {
-    const cells = Array.from(row.querySelectorAll("td"))
-      .filter((cell) => !cell.classList.contains("sum-cell"));
-    const text = cells[columnIndex]?.textContent.trim() ?? "";
-    const numericValue = parseNumberValue(text);
-    return { row, index, text, numericValue };
-  });
-
-  const allNumeric = rowData.every((item) => item.numericValue !== null);
-  rowData.sort((a, b) => {
-    if (allNumeric) {
-      const aVal = a.numericValue ?? Number.POSITIVE_INFINITY;
-      const bVal = b.numericValue ?? Number.POSITIVE_INFINITY;
-      return direction === "asc" ? aVal - bVal : bVal - aVal;
-    }
-    const aText = a.text.toLowerCase();
-    const bText = b.text.toLowerCase();
-    if (!aText && bText) {
-      return 1;
-    }
-    if (!bText && aText) {
-      return -1;
-    }
-    const compare = aText.localeCompare(bText, "de", { numeric: true, sensitivity: "base" });
-    return direction === "asc" ? compare : -compare;
-  });
-
-  const fragment = document.createDocumentFragment();
-  rowData.forEach((item) => fragment.appendChild(item.row));
-  const priceRow = tbody.querySelector("tr.price-row");
-  if (priceRow?.parentNode) {
-    priceRow.parentNode.insertBefore(fragment, priceRow.nextSibling);
-  } else {
-    tbody.appendChild(fragment);
-  }
-
-  if (sheet) {
-    const newIndexByOld = new Map();
-    rowData.forEach((item, newIndex) => {
-      newIndexByOld.set(item.index, newIndex);
-    });
-    const groups = getLinkedSumGroups(sheet);
-    groups.forEach((group) => {
-      if (!Array.isArray(group.rows)) {
-        return;
-      }
-      group.rows = group.rows.map((rowIndex) =>
-        newIndexByOld.has(rowIndex) ? newIndexByOld.get(rowIndex) : rowIndex
-      );
-    });
-    normalizeLinkedSumGroups(sheet);
-  }
-
-  if (lastRowIndex !== null && sheet) {
-    const newIndex = rowData.findIndex((item) => item.index === lastRowIndex);
-    if (newIndex !== -1) {
-      lastRowIndex = newIndex;
-    }
-  }
-  if (lastSumRowIndex !== null && sheet) {
-    const newIndex = rowData.findIndex((item) => item.index === lastSumRowIndex);
-    if (newIndex !== -1) {
-      lastSumRowIndex = newIndex;
-    }
-  }
-
-  sheet.sortState = { columnIndex, direction };
-  updateSortIndicators();
-  updateTotals();
-  autosave();
-}
-
-function getLinkedSumGroups(sheet) {
-  if (!sheet) {
-    return [];
-  }
-  if (!Array.isArray(sheet.linkedSumGroups)) {
-    sheet.linkedSumGroups = [];
-  }
-  return sheet.linkedSumGroups;
-}
-
-function normalizeLinkedSumGroups(sheet) {
-  const groups = getLinkedSumGroups(sheet);
-  const normalized = groups
-    .map((group) => ({
-      rows: Array.isArray(group.rows)
-        ? Array.from(new Set(group.rows.filter((row) => Number.isInteger(row))))
-        : [],
-    }))
-    .map((group) => ({
-      rows: group.rows.sort((a, b) => a - b),
-    }))
-    .filter((group) => group.rows.length >= 2);
-  sheet.linkedSumGroups = normalized;
-}
-
-function shiftLinkedGroupsOnInsert(sheet, afterIndex) {
-  const groups = getLinkedSumGroups(sheet);
-  groups.forEach((group) => {
-    if (!Array.isArray(group.rows)) {
-      return;
-    }
-    group.rows = group.rows.map((rowIndex) =>
-      rowIndex > afterIndex ? rowIndex + 1 : rowIndex
-    );
-  });
-  normalizeLinkedSumGroups(sheet);
-}
-
-function shiftLinkedGroupsOnRemove(sheet, index) {
-  const groups = getLinkedSumGroups(sheet);
-  groups.forEach((group) => {
-    if (!Array.isArray(group.rows)) {
-      return;
-    }
-    group.rows = group.rows
-      .filter((rowIndex) => rowIndex !== index)
-      .map((rowIndex) => (rowIndex > index ? rowIndex - 1 : rowIndex));
-  });
-  normalizeLinkedSumGroups(sheet);
-}
-
-function shiftLinkedGroupsOnMove(sheet, fromIndex, toIndex) {
-  if (fromIndex === toIndex) {
-    return;
-  }
-  const groups = getLinkedSumGroups(sheet);
-  groups.forEach((group) => {
-    if (!Array.isArray(group.rows)) {
-      return;
-    }
-    group.rows = group.rows.map((rowIndex) => {
-      if (rowIndex === fromIndex) {
-        return toIndex;
-      }
-      if (fromIndex < toIndex && rowIndex > fromIndex && rowIndex <= toIndex) {
-        return rowIndex - 1;
-      }
-      if (toIndex < fromIndex && rowIndex >= toIndex && rowIndex < fromIndex) {
-        return rowIndex + 1;
-      }
-      return rowIndex;
-    });
-  });
-  normalizeLinkedSumGroups(sheet);
-}
-
-function linkSelectedSums() {
-  const selectedRows = getSelectedSumRowIndexes();
-  if (!selectedRows || selectedRows.length < 2) {
-    setStatus("Bitte mehrere Summen-Zellen markieren.");
-    return;
-  }
-  const sheet = sheets[activeSheetIndex];
-  const groups = getLinkedSumGroups(sheet);
-  const next = groups.filter((group) =>
-    !group.rows?.some((rowIndex) => selectedRows.includes(rowIndex))
-  );
-  next.push({ rows: selectedRows });
-  sheet.linkedSumGroups = next;
-  updateTotals();
-  autosave();
-  setStatus("Summen verknüpft.");
-}
-
-function unlinkSelectedSums() {
-  const sheet = sheets[activeSheetIndex];
-  const groups = getLinkedSumGroups(sheet);
-  if (!groups.length) {
-    setStatus("Keine Verknüpfung vorhanden.");
-    return;
-  }
-  const selectedRows = getSelectedSumRowIndexes();
-  const targets = selectedRows && selectedRows.length ? selectedRows : (lastSumRowIndex !== null ? [lastSumRowIndex] : []);
-  if (!targets.length) {
-    setStatus("Bitte Summen-Zelle auswählen.");
-    return;
-  }
-  const next = groups.filter((group) =>
-    !group.rows?.some((rowIndex) => targets.includes(rowIndex))
-  );
-  if (next.length === groups.length) {
-    setStatus("Keine Verknüpfung gefunden.");
-    return;
-  }
-  sheet.linkedSumGroups = next;
-  updateTotals();
-  autosave();
-  setStatus("Verknüpfung gelöst.");
 }
 
 function clearCellSelection() {
@@ -1541,7 +1205,8 @@ function applyCellSelection(start, end) {
   const rows = Array.from(tbody.querySelectorAll("tr"));
 
   rows.forEach((row, rowIndex) => {
-    const cells = getSelectableCells(row);
+    const cells = Array.from(row.querySelectorAll("td"))
+      .filter((td) => !td.classList.contains("sum-cell"));
     cells.forEach((cell, colIndex) => {
       const isSelected = rowIndex >= rowMin
         && rowIndex <= rowMax
@@ -1575,23 +1240,10 @@ function downloadWorkbook() {
   }
 
   const workbook = XLSX.utils.book_new();
-  const usedNames = new Set();
   sheets.forEach((sheet) => {
     const data = sheet.data.length ? normalizeSheetData(sheet.data) : createEmptyData();
     const worksheet = XLSX.utils.aoa_to_sheet(data);
-    let sheetName = normalizeExcelSheetName(sheet.name);
-    if (!sheetName) {
-      sheetName = "Sheet";
-    }
-    let uniqueName = sheetName;
-    let suffix = 1;
-    while (usedNames.has(uniqueName)) {
-      const base = sheetName.slice(0, Math.max(1, 31 - String(suffix).length - 1));
-      uniqueName = `${base}_${suffix}`;
-      suffix += 1;
-    }
-    usedNames.add(uniqueName);
-    XLSX.utils.book_append_sheet(workbook, worksheet, uniqueName);
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name);
   });
   const filename = buildFilename("xlsx");
   if (typeof XLSX.write === "function") {
@@ -1667,12 +1319,7 @@ async function handleFile(file) {
     sheets = workbook.SheetNames.map((sheetName) => {
       const sheet = workbook.Sheets[sheetName];
       const data = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: true });
-      return {
-        name: sheetName,
-        data: normalizeSheetData(data),
-        locked: false,
-        linkedSumGroups: [],
-      };
+      return { name: sheetName, data: normalizeSheetData(data), locked: false };
     });
 
     if (!sheets.length) {
@@ -1701,26 +1348,6 @@ newSheetButton.addEventListener("click", () => {
 addRowButton.addEventListener("click", () => {
   addRow();
 });
-
-if (copyPasteRowButton) {
-  copyPasteRowButton.addEventListener("click", () => {
-    if (lastRowIndex === null) {
-      setStatus("Bitte zuerst eine Zeile anklicken.");
-      return;
-    }
-    copyAndPasteRowBelow(lastRowIndex);
-  });
-}
-
-if (deleteSelectedRowButton) {
-  deleteSelectedRowButton.addEventListener("click", () => {
-    if (lastRowIndex === null) {
-      setStatus("Bitte zuerst eine Zeile anklicken.");
-      return;
-    }
-    removeRowAt(lastRowIndex);
-  });
-}
 
 removeRowButton.addEventListener("click", () => {
   removeRow();
@@ -1764,55 +1391,6 @@ downloadButton.addEventListener("click", () => {
 downloadPdfButton.addEventListener("click", () => {
   downloadPDF();
 });
-
-function handlePrintClick() {
-  updatePrintTitle();
-  window.print();
-}
-
-if (printSheetButton) {
-  printSheetButton.addEventListener("click", handlePrintClick);
-}
-
-if (printSheetTabsButton) {
-  printSheetTabsButton.addEventListener("click", handlePrintClick);
-}
-
-if (contextCopyPasteRowButton) {
-  contextCopyPasteRowButton.addEventListener("click", () => {
-    closeRowContextMenu();
-    if (lastRowIndex === null) {
-      setStatus("Keine Zeile ausgewählt.");
-      return;
-    }
-    copyAndPasteRowBelow(lastRowIndex);
-  });
-}
-
-if (contextDeleteRowButton) {
-  contextDeleteRowButton.addEventListener("click", () => {
-    closeRowContextMenu();
-    if (lastRowIndex === null) {
-      setStatus("Keine Zeile ausgewählt.");
-      return;
-    }
-    removeRowAt(lastRowIndex);
-  });
-}
-
-if (contextLinkSumsButton) {
-  contextLinkSumsButton.addEventListener("click", () => {
-    closeRowContextMenu();
-    linkSelectedSums();
-  });
-}
-
-if (contextUnlinkSumsButton) {
-  contextUnlinkSumsButton.addEventListener("click", () => {
-    closeRowContextMenu();
-    unlinkSelectedSums();
-  });
-}
 
 function updateInvoiceSheetOptions() {
   if (!invoiceSheetSelect) {
@@ -2161,7 +1739,8 @@ function buildSelectedText() {
     if (!row) {
       continue;
     }
-    const cells = getSelectableCells(row);
+    const cells = Array.from(row.querySelectorAll("td"))
+      .filter((td) => !td.classList.contains("sum-cell"));
     const rowValues = [];
     for (let colIndex = range.colMin; colIndex <= range.colMax; colIndex += 1) {
       const cell = cells[colIndex];
@@ -2192,10 +1771,11 @@ function applyPasteGrid(startCoords, grid) {
     if (!row) {
       return;
     }
-    const rowCells = getSelectableCells(row);
+    const rowCells = Array.from(row.querySelectorAll("td"))
+      .filter((td) => !td.classList.contains("sum-cell"));
     cells.forEach((value, colOffset) => {
       const cell = rowCells[startCoords.colIndex + colOffset];
-      if (!cell || cell.classList.contains("sum-cell")) {
+      if (!cell) {
         return;
       }
       cell.textContent = value;
@@ -2271,23 +1851,14 @@ table.addEventListener("blur", (event) => {
 table.addEventListener("contextmenu", (event) => {
   const target = event.target instanceof HTMLElement ? event.target : event.target?.parentElement;
   const cell = target?.closest("td");
-  if (!cell) {
+  if (!cell || cell.classList.contains("sum-cell")) {
     return;
   }
-  setLastRowIndexFromCell(cell);
-  const selectedSumRows = getSelectedSumRowIndexes();
-  if (tbody.querySelector("td.cell-selected") && selectedSumRows === null) {
+  if (tbody.querySelector("td.cell-selected")) {
     const buffer = ensureCopyBuffer();
     buffer.value = buildSelectedText() || " ";
     buffer.focus();
     buffer.select();
-    return;
-  }
-  event.preventDefault();
-  if (rowContextMenu) {
-    const showSumActions = cell.classList.contains("sum-cell");
-    const showRowActions = !cell.classList.contains("sum-cell");
-    openRowContextMenu(event.clientX, event.clientY, { showSumActions, showRowActions });
     return;
   }
   const selection = window.getSelection();
@@ -2325,15 +1896,14 @@ table.addEventListener("paste", (event) => {
 });
 
 table.addEventListener("mousedown", (event) => {
-  if (event.button !== 0) {
+  if (event.button !== 0 || isCoarsePointer) {
     return;
   }
   const target = event.target instanceof HTMLElement ? event.target : event.target?.parentElement;
   const cell = target?.closest("td");
-  if (!cell) {
+  if (!cell || cell.classList.contains("sum-cell")) {
     return;
   }
-  setLastRowIndexFromCell(cell);
   const coords = getCellCoords(cell);
   if (!coords) {
     return;
@@ -2352,7 +1922,7 @@ table.addEventListener("mouseover", (event) => {
   }
   const target = event.target instanceof HTMLElement ? event.target : event.target?.parentElement;
   const cell = target?.closest("td");
-  if (!cell) {
+  if (!cell || cell.classList.contains("sum-cell")) {
     return;
   }
   const coords = getCellCoords(cell);
@@ -2396,20 +1966,6 @@ document.addEventListener("copy", (event) => {
   event.preventDefault();
 });
 
-document.addEventListener("click", (event) => {
-  if (!rowContextMenu || !rowContextMenu.classList.contains("is-open")) {
-    return;
-  }
-  if (event.target instanceof Node && rowContextMenu.contains(event.target)) {
-    return;
-  }
-  closeRowContextMenu();
-});
-
-document.addEventListener("scroll", () => {
-  closeRowContextMenu();
-}, true);
-
 async function autoload() {
   try {
     const response = await fetch("api/load.php");
@@ -2422,10 +1978,9 @@ async function autoload() {
         ...sheet,
         locked: Boolean(sheet.locked),
         data: normalizeSheetData(sheet.data || []),
-        linkedSumGroups: Array.isArray(sheet.linkedSumGroups) ? sheet.linkedSumGroups : [],
       }));
-      activeSheetIndex = 0;
-      buildTable(sheets[0].data);
+      activeSheetIndex = showLockedSheets ? 0 : firstUnlockedIndex();
+      buildTable(sheets[activeSheetIndex].data);
       renderTabs();
       setLastSaved(result.data.updated_at);
       setStatus("Daten geladen.");
@@ -2435,12 +1990,7 @@ async function autoload() {
   }
 }
 
-sheets = [{
-  name: "Sheet 1",
-  data: createEmptyData(),
-  locked: false,
-  linkedSumGroups: [],
-}];
+sheets = [{ name: "Sheet 1", data: createEmptyData(), locked: false }];
 activeSheetIndex = 0;
 buildTable(sheets[0].data);
 renderTabs();
