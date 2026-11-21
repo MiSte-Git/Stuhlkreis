@@ -506,6 +506,21 @@ button:active {
   color: var(--muted);
 }
 
+.sheet-table .price-row td.price-cell {
+  text-align: center;
+  font-weight: 700;
+}
+
+.sheet-table .price-row td.price-cell:empty::before {
+  content: "Preis";
+  color: #c7b6a4;
+  font-weight: 400;
+}
+
+.sheet-table .name-sub {
+  background: #f8f1e7;
+}
+
 .sheet-table .col-current:not(.cell-selected) {
   background-color: #fff6ee;
 }
@@ -738,6 +753,7 @@ th.drop-target {
   }
 
   .sheet-table .name-header,
+  .sheet-table .name-sub,
   .sheet-table .name-cell,
   .sheet-table .label-cell {
     position: sticky;
@@ -750,7 +766,9 @@ th.drop-target {
     box-shadow: 1px 0 0 var(--line);
   }
 
-  .sheet-table .name-header {
+  .sheet-table .name-header,
+  .sheet-table .name-sub,
+  .sheet-table .label-cell {
     z-index: 3;
   }
 

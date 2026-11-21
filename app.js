@@ -137,7 +137,7 @@ function applySheetLockState() {
     header.contentEditable = locked ? "false" : "true";
   });
 
-  tbody.querySelectorAll("td[data-kind]").forEach((cell) => {
+  table.querySelectorAll("td[data-kind]").forEach((cell) => {
     const editable = !locked && EDITABLE_KINDS.has(cell.dataset.kind);
     if (cell.dataset.kind === "name") {
       const text = cell.querySelector(".cell-text");
@@ -459,6 +459,10 @@ function stripExportExtras(data) {
   if (rows.length && String(rows[0][width - 1] ?? "").trim() === SUM_HEADER) {
     rows = rows.map((row) => row.slice(0, width - 1));
   }
+  // Export-Reihenfolge (Preis vor Anzahl/Größe) zurückdrehen
+  if (rows.length >= 3 && !isV2Data(rows) && isQtyLabel(rows[2]?.[1]) && isSizeLabel(rows[2]?.[2])) {
+    [rows[1], rows[2]] = [rows[2], rows[1]];
+  }
   return rows;
 }
 
@@ -505,8 +509,7 @@ function editableElement(td) {
 }
 
 function getBodyRows() {
-  return Array.from(tbody.querySelectorAll("tr"))
-    .filter((tr) => !tr.classList.contains("price-row"));
+  return Array.from(tbody.rows);
 }
 
 function findCell(rowIndex, col) {
@@ -633,7 +636,6 @@ function buildTable(data) {
 
   const headRow = document.createElement("tr");
   const nameTh = document.createElement("th");
-  nameTh.rowSpan = 2;
   nameTh.className = "name-header";
   nameTh.dataset.fixed = "true";
   nameTh.textContent = rows[0][0];
@@ -642,27 +644,28 @@ function buildTable(data) {
     headRow.appendChild(createArticleHeader(rows[0][qtyCol(i)], i));
   }
   const sumTh = createFixedHeaderCell(SUM_HEADER);
-  sumTh.rowSpan = 2;
+  sumTh.rowSpan = 3;
   headRow.appendChild(sumTh);
 
-  const subRow = document.createElement("tr");
-  subRow.className = "sub-header-row";
-  for (let i = 0; i < count; i += 1) {
-    subRow.append(createSubHeader(QTY_LABEL, qtyCol(i)), createSubHeader(SIZE_LABEL, sizeCol(i)));
-  }
-  thead.append(headRow, subRow);
-
+  // Preiszeile: eine Zelle pro Artikel (über Anzahl und Größe)
   const priceTr = document.createElement("tr");
   priceTr.className = "price-row";
   priceTr.appendChild(createBodyCell(rows[2][0], 0, "label"));
   for (let i = 0; i < count; i += 1) {
-    priceTr.append(
-      createBodyCell(rows[2][qtyCol(i)], qtyCol(i), "price"),
-      createBodyCell("", sizeCol(i), "blank")
-    );
+    const priceCell = createBodyCell(rows[2][qtyCol(i)], qtyCol(i), "price");
+    priceCell.colSpan = 2;
+    priceTr.appendChild(priceCell);
   }
-  priceTr.appendChild(createSumCell());
-  tbody.appendChild(priceTr);
+
+  const subRow = document.createElement("tr");
+  subRow.className = "sub-header-row";
+  const nameSub = document.createElement("th");
+  nameSub.className = "name-sub";
+  subRow.appendChild(nameSub);
+  for (let i = 0; i < count; i += 1) {
+    subRow.append(createSubHeader(QTY_LABEL, qtyCol(i)), createSubHeader(SIZE_LABEL, sizeCol(i)));
+  }
+  thead.append(headRow, priceTr, subRow);
 
   rows.slice(3).forEach((row) => {
     tbody.appendChild(createDataRow(row, count));
@@ -683,24 +686,29 @@ function collectTableData() {
     subRow.push(QTY_LABEL, SIZE_LABEL);
   });
   const width = headerRow.length;
-  const bodyRows = Array.from(tbody.querySelectorAll("tr")).map((tr) => {
+  const readRow = (tr) => {
     const row = Array(width).fill("");
-    tr.querySelectorAll("td[data-col]").forEach((td) => {
+    tr?.querySelectorAll("td[data-col]").forEach((td) => {
       const col = Number(td.dataset.col);
       if (col < width && td.dataset.kind !== "blank") {
         row[col] = getCellValue(td);
       }
     });
     return row;
-  });
-  if (!bodyRows.length) {
+  };
+  const priceRow = readRow(thead.querySelector("tr.price-row"));
+  if (!priceRow[0]) {
+    priceRow[0] = PRICE_LABEL;
+  }
+  const bodyRows = Array.from(tbody.rows).map(readRow);
+  if (!thead.querySelector("tr.price-row")) {
     return createEmptyData();
   }
-  return [headerRow, subRow, ...bodyRows];
+  return [headerRow, subRow, priceRow, ...bodyRows];
 }
 
 function updateTotals() {
-  if (!tbody.querySelector("tr.price-row")) {
+  if (!thead.querySelector("tr.price-row")) {
     return;
   }
   const data = collectTableData();
@@ -731,7 +739,7 @@ function markCurrentCell() {
       `[data-col="${qtyCol(article)}"], [data-col="${sizeCol(article)}"], th.article-header[data-article="${article}"]`
     ).forEach((el) => el.classList.add("col-current"));
   }
-  if (currentCell.rowIndex >= 1) {
+  if (currentCell.rowIndex >= 0) {
     tbody.rows[currentCell.rowIndex]?.classList.add("row-current");
   }
 }
@@ -741,9 +749,9 @@ function setCurrentFromElement(target) {
     return;
   }
   const td = target.closest("td[data-col]");
-  if (td && tbody.contains(td)) {
+  if (td && table.contains(td)) {
     currentCell = {
-      rowIndex: Array.from(tbody.rows).indexOf(td.parentElement),
+      rowIndex: tbody.contains(td) ? Array.from(tbody.rows).indexOf(td.parentElement) : -1,
       col: Number(td.dataset.col),
     };
     markCurrentCell();
@@ -871,7 +879,7 @@ function moveDataRow(from, to) {
   }
   const [row] = data.splice(3 + from, 1);
   data.splice(3 + to, 0, row);
-  commitStructure(data, { rowIndex: to + 1, col: currentCell?.col ?? 0 });
+  commitStructure(data, { rowIndex: to, col: currentCell?.col ?? 0 });
   setStatus("Zeile verschoben.");
 }
 
@@ -900,6 +908,9 @@ function startResize(event, th) {
 
 function setColumnWidth(col, width) {
   table.querySelectorAll(`[data-col="${col}"]`).forEach((cell) => {
+    if (cell.colSpan > 1) {
+      return;
+    }
     cell.style.width = `${width}px`;
     cell.style.minWidth = `${width}px`;
   });
@@ -916,8 +927,8 @@ function resolveDropTarget(element, kind) {
   if (kind === "col") {
     return element.closest("th.article-header");
   }
-  const tr = element.closest("tbody tr");
-  return tr && !tr.classList.contains("price-row") ? tr : null;
+  const tr = element.closest("tr");
+  return tr && tbody.contains(tr) ? tr : null;
 }
 
 // Maus: HTML5 Drag & Drop nur über den Griff
@@ -1296,10 +1307,10 @@ function uniqueArticleName(data) {
 
 function currentDataRowIndex() {
   // Index der Datenzeile (0 = erste Person), null wenn keine Datenzeile gewählt ist
-  if (!currentCell || currentCell.rowIndex < 1) {
+  if (!currentCell || currentCell.rowIndex < 0) {
     return null;
   }
-  return currentCell.rowIndex - 1;
+  return currentCell.rowIndex;
 }
 
 function addRow() {
@@ -1313,7 +1324,7 @@ function addRow() {
   const insertAt = current === null ? dataCount : Math.min(current + 1, dataCount);
   data.splice(3 + insertAt, 0, Array(width).fill(""));
   commitStructure(data, null);
-  focusCell(insertAt + 1, 0);
+  focusCell(insertAt, 0);
   setStatus(current === null ? "Zeile am Ende hinzugefügt." : "Zeile unterhalb eingefügt.");
 }
 
@@ -1338,7 +1349,7 @@ function removeRow() {
   }
   data.splice(3 + current, 1);
   const nextRow = Math.min(current, dataCount - 2);
-  commitStructure(data, { rowIndex: nextRow + 1, col: currentCell?.col ?? 0 });
+  commitStructure(data, { rowIndex: nextRow, col: currentCell?.col ?? 0 });
   setStatus("Zeile gelöscht.");
 }
 
@@ -1509,6 +1520,8 @@ function buildExportSheet(sheet) {
     }
     return out;
   });
+  // Reihenfolge wie in der Ansicht: Artikel, Preis, Anzahl/Größe
+  [aoa[1], aoa[2]] = [aoa[2], aoa[1]];
   const width = aoa[0].length;
   if (hasAnyPrice) {
     const totalRow = Array(width).fill("");
@@ -1517,11 +1530,11 @@ function buildExportSheet(sheet) {
     aoa.push(totalRow);
   }
   const merges = [
-    { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } },
-    { s: { r: 0, c: width - 1 }, e: { r: 1, c: width - 1 } },
+    { s: { r: 0, c: width - 1 }, e: { r: 2, c: width - 1 } },
   ];
   for (let i = 0; i < count; i += 1) {
     merges.push({ s: { r: 0, c: qtyCol(i) }, e: { r: 0, c: sizeCol(i) } });
+    merges.push({ s: { r: 1, c: qtyCol(i) }, e: { r: 1, c: sizeCol(i) } });
   }
 
   const worksheet = XLSX.utils.aoa_to_sheet(aoa);
@@ -1535,7 +1548,7 @@ function buildExportSheet(sheet) {
     }
   };
   for (let i = 0; i < count; i += 1) {
-    setFormat(2, qtyCol(i));
+    setFormat(1, qtyCol(i));
   }
   for (let r = 3; r < aoa.length; r += 1) {
     setFormat(r, width - 1);
@@ -1595,23 +1608,27 @@ function downloadPDF() {
     const { hasAnyPrice, rowTotals, grand } = computeTotals(data);
     const articles = Array.from({ length: count }, (_, i) => i);
 
+    const priceStyle = { fillColor: [255, 243, 231], textColor: 20, halign: "center" };
     const head = [
       [
-        { content: data[0][0], rowSpan: 2, styles: { valign: "middle" } },
+        { content: data[0][0], styles: { valign: "middle" } },
         ...articles.map((i) => ({ content: data[0][qtyCol(i)], colSpan: 2, styles: { halign: "center" } })),
-        { content: SUM_HEADER, rowSpan: 2, styles: { valign: "middle", halign: "right" } },
+        { content: SUM_HEADER, rowSpan: 3, styles: { valign: "middle", halign: "right" } },
       ],
-      articles.flatMap(() => [QTY_LABEL, SIZE_LABEL]),
+      [
+        { content: data[2][0], styles: { ...priceStyle, halign: "left" } },
+        ...articles.map((i) => {
+          const number = parseNumberValue(data[2][qtyCol(i)]);
+          return {
+            content: number === null ? data[2][qtyCol(i)] : formatCurrency(number),
+            colSpan: 2,
+            styles: priceStyle,
+          };
+        }),
+      ],
+      ["", ...articles.flatMap(() => [QTY_LABEL, SIZE_LABEL])],
     ];
-    const priceRow = data[2].map((value, col) => {
-      if (col >= 1 && col % 2 === 1) {
-        const number = parseNumberValue(value);
-        return number === null ? value : formatCurrency(number);
-      }
-      return value;
-    });
     const body = [
-      [...priceRow, ""],
       ...data.slice(3).map((row, rowIndex) => [
         ...row,
         hasAnyPrice ? formatCurrency(rowTotals[rowIndex] ?? 0) : "",
@@ -1633,12 +1650,6 @@ function downloadPDF() {
       headStyles: { fillColor: [195, 76, 45], textColor: 255 },
       footStyles: { fillColor: [255, 243, 231], textColor: 20, fontStyle: "bold" },
       columnStyles: { [width]: { halign: "right" } },
-      didParseCell: (hookData) => {
-        if (hookData.section === "body" && hookData.row.index === 0) {
-          hookData.cell.styles.fillColor = [255, 243, 231];
-          hookData.cell.styles.fontStyle = "bold";
-        }
-      },
       theme: "grid",
     });
   });
@@ -2193,6 +2204,12 @@ function handleTableInput(event) {
 }
 
 function moveFocusDown(td) {
+  if (td.closest("tr.price-row")) {
+    if (!focusCell(0, Number(td.dataset.col))) {
+      td.blur();
+    }
+    return;
+  }
   const coords = getCellCoords(td);
   if (!coords) {
     return;
