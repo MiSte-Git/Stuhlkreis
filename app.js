@@ -59,6 +59,7 @@ const SIZE_LABEL = "Größe";
 const PRICE_LABEL = "Preis (€)";
 const TOTAL_LABEL = "Gesamtsumme";
 const UNIT_PRICE_LABEL = "Stückpreis";
+const FREE_SHIPPING_FROM = 100; // Versand bei dgtextildruck.de ab diesem Bestellwert frei
 const PRINT_DEFAULT_LABEL = "Druck";
 const DEFAULT_ARTICLES = ["T-Shirt", "Polo-Shirt", "Hoodes Zip"];
 const DEFAULT_NAMES = [
@@ -641,7 +642,8 @@ function createPriceLabelCell(value) {
     "zzgl. ",
     makeLink(PRICE_NOTE_LINKS[0]),
     " und ",
-    makeLink(PRICE_NOTE_LINKS[1])
+    makeLink(PRICE_NOTE_LINKS[1]),
+    ` (ab ${formatCurrency(FREE_SHIPPING_FROM).replace(",00", "")} Bestellwert versandfrei)`
   );
   cell.append(label, note);
   return cell;
@@ -872,7 +874,20 @@ function updateTotals() {
     }
   });
   if (grandTotalEl) {
-    grandTotalEl.textContent = hasAnyPrice ? `Gesamtsumme: ${formatCurrency(grand)}` : "";
+    grandTotalEl.textContent = "";
+    if (hasAnyPrice) {
+      const totalText = document.createElement("span");
+      totalText.textContent = `Gesamtsumme: ${formatCurrency(grand)}`;
+      const shipping = document.createElement("span");
+      shipping.className = "shipping-hint";
+      if (grand >= FREE_SHIPPING_FROM) {
+        shipping.classList.add("is-free");
+        shipping.textContent = "Versandkostenfrei ✓";
+      } else {
+        shipping.textContent = `Noch ${formatCurrency(FREE_SHIPPING_FROM - grand)} bis versandkostenfrei`;
+      }
+      grandTotalEl.append(shipping, totalText);
+    }
   }
 }
 

@@ -299,6 +299,24 @@ button:active {
   display: none;
 }
 
+.meta.grand-total {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px 16px;
+}
+
+.shipping-hint {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.shipping-hint.is-free {
+  color: #2f7a3e;
+}
+
 .tabs {
   margin-top: 16px;
 }
