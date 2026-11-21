@@ -4,7 +4,9 @@ const downloadPdfButton = document.getElementById("downloadPdf");
 const pdfOrientationSelect = document.getElementById("pdfOrientation");
 const newSheetButton = document.getElementById("newSheet");
 const addRowButton = document.getElementById("addRow");
-const addColButton = document.getElementById("addCol");
+const addColLeftButton = document.getElementById("addColLeft");
+const addColRightButton = document.getElementById("addColRight");
+const downloadScopeSelect = document.getElementById("downloadScope");
 const removeRowButton = document.getElementById("removeRow");
 const removeColButton = document.getElementById("removeCol");
 const removeSheetButton = document.getElementById("removeSheet");
@@ -50,13 +52,12 @@ function writeShowLocked(value) {
 
 let showLockedSheets = readShowLocked();
 
-const DEFAULT_HEADERS = [
-  "Name",
-  "Größe",
-  "T-Shirt",
-  "Polo-Shirt",
-  "Hoodes Zip",
-];
+const NAME_LABEL = "Name";
+const QTY_LABEL = "Anzahl";
+const SIZE_LABEL = "Größe";
+const PRICE_LABEL = "Preis (€)";
+const TOTAL_LABEL = "Gesamtsumme";
+const DEFAULT_ARTICLES = ["T-Shirt", "Polo-Shirt", "Hoodes Zip"];
 const DEFAULT_NAMES = [
   "1. Vorstand (Peter)",
   "2. Vorstand (Karl)",
@@ -70,8 +71,6 @@ const DEFAULT_NAMES = [
   "Transporter (Klaus)",
   "Zentralglöckner (Sebi)",
 ];
-const DEFAULT_ROWS = DEFAULT_NAMES.length;
-const DEFAULT_COLS = DEFAULT_HEADERS.length;
 const SUM_HEADER = "Summe";
 
 let sheets = [];
@@ -84,6 +83,8 @@ let selectionStart = null;
 let selectionEnd = null;
 let hasDragSelection = false;
 let hasUserSelectedInvoice = false;
+let currentCell = null;
+let headerJustFocused = null;
 
 function sanitizeFilename(value) {
   return value
@@ -93,9 +94,9 @@ function sanitizeFilename(value) {
     .replace(/ /g, "_");
 }
 
-function buildFilename(extension) {
+function buildFilename(extension, list = sheets) {
   const title = document.querySelector(".brand")?.textContent ?? "Sheet";
-  const sheetNames = sheets.map((sheet) => sheet.name).join("_");
+  const sheetNames = list.map((sheet) => sheet.name).join("_");
   const baseName = sanitizeFilename(`${title}_${sheetNames}`) || "Sheet";
   const clipped = baseName.slice(0, 140);
   return `${clipped}.${extension}`;
@@ -136,42 +137,29 @@ function applySheetLockState() {
     header.contentEditable = locked ? "false" : "true";
   });
 
-  tbody.querySelectorAll("td").forEach((cell) => {
-    if (cell.classList.contains("sum-cell")) {
+  tbody.querySelectorAll("td[data-kind]").forEach((cell) => {
+    const editable = !locked && EDITABLE_KINDS.has(cell.dataset.kind);
+    if (cell.dataset.kind === "name") {
+      const text = cell.querySelector(".cell-text");
+      if (text) {
+        text.contentEditable = editable ? "true" : "false";
+      }
       return;
     }
-    cell.contentEditable = locked ? "false" : "true";
+    cell.contentEditable = editable ? "true" : "false";
   });
 
-  thead.querySelectorAll("th").forEach((th) => {
-    if (th.dataset.fixed === "true") {
-      return;
-    }
-    th.draggable = !locked && !isCoarsePointer;
-    const indicator = th.querySelector(".drag-indicator");
-    if (indicator) {
-      indicator.draggable = !locked && !isCoarsePointer;
-    }
-    const handle = th.querySelector(".col-resize-handle");
-    if (handle) {
-      handle.style.pointerEvents = locked ? "none" : "auto";
-    }
+  table.querySelectorAll(".drag-indicator, .row-drag-indicator").forEach((indicator) => {
+    indicator.draggable = !locked && !isCoarsePointer;
   });
-
-  tbody.querySelectorAll("tr").forEach((row) => {
-    if (row.classList.contains("price-row")) {
-      return;
-    }
-    row.draggable = !locked && !isCoarsePointer;
-    const indicator = row.querySelector(".row-drag-indicator");
-    if (indicator) {
-      indicator.draggable = !locked && !isCoarsePointer;
-    }
+  table.querySelectorAll(".col-resize-handle").forEach((handle) => {
+    handle.style.pointerEvents = locked ? "none" : "auto";
   });
 
   setActionDisabled(addRowButton, locked);
   setActionDisabled(removeRowButton, locked);
-  setActionDisabled(addColButton, locked);
+  setActionDisabled(addColLeftButton, locked);
+  setActionDisabled(addColRightButton, locked);
   setActionDisabled(removeColButton, locked);
   setActionDisabled(removeSheetButton, locked);
 
@@ -181,10 +169,7 @@ function applySheetLockState() {
 
   if (toggleLockButton) {
     toggleLockButton.textContent = locked ? "Bestellung wieder öffnen" : "Bestellung abschließen";
-    toggleLockButton.setAttribute(
-      "aria-pressed",
-      locked ? "true" : "false"
-    );
+    toggleLockButton.setAttribute("aria-pressed", locked ? "true" : "false");
   }
 }
 
@@ -243,72 +228,76 @@ function clearTable() {
   tbody.innerHTML = "";
 }
 
-function createBodyCell(value) {
-  const cell = document.createElement("td");
-  cell.contentEditable = "true";
-  cell.textContent = value ?? "";
-  return cell;
+/* ---------- Datenformat ----------
+ * Zeile 0: Name | Artikel 1 | "" | Artikel 2 | "" ...
+ * Zeile 1: ""   | Anzahl    | Größe | Anzahl | Größe ...
+ * Zeile 2: Preis (€) | Preis | "" | Preis | "" ...
+ * Ab Zeile 3: Name | Anzahl | Größe | ...
+ */
+
+function normLabel(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/ö/g, "oe")
+    .replace(/ß/g, "ss");
 }
 
-function createHeaderCell(value) {
-  const cell = document.createElement("th");
-  cell.contentEditable = "false";
-
-  const indicator = document.createElement("span");
-  indicator.className = "drag-indicator";
-  indicator.textContent = "☞";
-  indicator.contentEditable = "false";
-  indicator.setAttribute("aria-hidden", "true");
-
-  const text = document.createElement("span");
-  text.className = "header-text";
-  text.contentEditable = "true";
-  text.textContent = value ?? "";
-
-  cell.append(indicator, text);
-  return cell;
+function isSizeLabel(value) {
+  const n = normLabel(value);
+  return n === "groesse" || n === "grosse" || n === "size";
 }
 
-function createFixedHeaderCell(value) {
-  const cell = document.createElement("th");
-  cell.textContent = value;
-  cell.contentEditable = "false";
-  cell.setAttribute("data-fixed", "true");
-  cell.className = "sum-header";
-  return cell;
+function isQtyLabel(value) {
+  const n = normLabel(value);
+  return n === "anzahl" || n === "menge";
 }
 
-function createSumCell() {
-  const cell = document.createElement("td");
-  cell.contentEditable = "false";
-  cell.className = "sum-cell";
-  const valueSpan = document.createElement("span");
-  valueSpan.className = "sum-value";
-  cell.appendChild(valueSpan);
-  return cell;
+function qtyCol(articleIndex) {
+  return 1 + articleIndex * 2;
+}
+
+function sizeCol(articleIndex) {
+  return 2 + articleIndex * 2;
+}
+
+function articleOfCol(col) {
+  return col >= 1 ? Math.floor((col - 1) / 2) : null;
+}
+
+function articleCount(data) {
+  return Math.max(0, Math.floor(((data?.[0]?.length ?? 1) - 1) / 2));
+}
+
+function isV2Data(data) {
+  const sub = data?.[1];
+  return Array.isArray(sub) && isQtyLabel(sub[1]) && isSizeLabel(sub[2]);
 }
 
 function createPriceRow(cols) {
   const row = Array(cols).fill("");
   if (cols > 0) {
-    row[0] = "Preis (€)";
+    row[0] = PRICE_LABEL;
   }
   return row;
 }
 
-function createEmptyData(rows = DEFAULT_ROWS, cols = DEFAULT_COLS) {
-  const headers = cols === DEFAULT_COLS
-    ? [...DEFAULT_HEADERS]
-    : Array.from({ length: cols }, (_, i) => `Column ${i + 1}`);
-  const priceRow = createPriceRow(cols);
+function createEmptyData(rows = DEFAULT_NAMES.length, articles = DEFAULT_ARTICLES) {
+  const header = [NAME_LABEL];
+  const sub = [""];
+  const price = [PRICE_LABEL];
+  articles.forEach((name) => {
+    header.push(name, "");
+    sub.push(QTY_LABEL, SIZE_LABEL);
+    price.push("", "");
+  });
+  const width = header.length;
   const dataRows = Array.from({ length: rows }, (_, rowIndex) => {
-    const row = Array(cols).fill("");
-    if (cols === DEFAULT_COLS && rowIndex < DEFAULT_NAMES.length) {
-      row[0] = DEFAULT_NAMES[rowIndex];
-    }
+    const row = Array(width).fill("");
+    row[0] = DEFAULT_NAMES[rowIndex] ?? "";
     return row;
   });
-  return [headers, priceRow, ...dataRows];
+  return [header, sub, price, ...dataRows];
 }
 
 function parseNumberValue(value) {
@@ -363,14 +352,10 @@ function isPriceRow(row) {
   return hasNumbers && !hasNonNumeric;
 }
 
-function normalizeSheetData(data) {
-  if (!data.length) {
-    return createEmptyData();
-  }
-  const maxCols = data.reduce((max, row) => Math.max(max, row.length), 0);
+function legacyNormalize(data) {
+  const maxCols = Math.max(1, data.reduce((max, row) => Math.max(max, row.length), 0));
   const normalizeRow = (row) =>
     Array.from({ length: maxCols }, (_, col) => row?.[col] ?? "");
-
   const header = normalizeRow(data[0]);
   const rest = data.slice(1).map(normalizeRow);
   if (!rest.length) {
@@ -382,6 +367,259 @@ function normalizeSheetData(data) {
   return [header, ...rest];
 }
 
+function isPlainNumber(value) {
+  return /^\s*\d+([.,]\d+)?\s*$/.test(String(value ?? ""));
+}
+
+// Altes Format (eine Spalte pro Artikel + globale Größe) ins neue Format überführen.
+function migrateLegacyData(data) {
+  const [header, price, ...rows] = legacyNormalize(data);
+  const sizeIndex = header.findIndex((value, index) => index > 0 && isSizeLabel(value));
+  const articleCols = header
+    .map((_, index) => index)
+    .filter((index) => index > 0 && index !== sizeIndex);
+  const articleNames = articleCols.length
+    ? articleCols.map((index, i) => String(header[index] ?? "").trim() || `Artikel ${i + 1}`)
+    : ["Artikel 1"];
+  const out = createEmptyData(0, articleNames);
+  out[0][0] = String(header[0] ?? "").trim() || NAME_LABEL;
+  out[2][0] = String(price[0] ?? "").trim() || PRICE_LABEL;
+  articleCols.forEach((src, i) => {
+    out[2][qtyCol(i)] = String(price[src] ?? "").trim();
+  });
+  rows.forEach((row) => {
+    const next = Array(out[0].length).fill("");
+    next[0] = String(row[0] ?? "");
+    const globalSize = sizeIndex >= 0 ? String(row[sizeIndex] ?? "").trim() : "";
+    articleCols.forEach((src, i) => {
+      const value = String(row[src] ?? "").trim();
+      if (!value) {
+        return;
+      }
+      if (isPlainNumber(value)) {
+        next[qtyCol(i)] = value;
+        if (globalSize) {
+          next[sizeCol(i)] = globalSize;
+        }
+      } else {
+        next[sizeCol(i)] = value;
+      }
+    });
+    out.push(next);
+  });
+  return out;
+}
+
+function normalizeSheetData(data) {
+  if (!Array.isArray(data) || !data.length) {
+    return createEmptyData();
+  }
+  let rows = data.map((row) =>
+    Array.isArray(row) ? row.map((value) => (value === null || value === undefined ? "" : String(value))) : []
+  );
+  if (!isV2Data(rows)) {
+    rows = migrateLegacyData(rows);
+  }
+  let width = rows.reduce((max, row) => Math.max(max, row.length), 0);
+  if (width < 3) {
+    width = 3;
+  }
+  if ((width - 1) % 2 !== 0) {
+    width += 1;
+  }
+  rows = rows.map((row) => Array.from({ length: width }, (_, col) => row[col] ?? ""));
+  while (rows.length < 3) {
+    rows.push(Array(width).fill(""));
+  }
+  rows[0][0] = rows[0][0].trim() || NAME_LABEL;
+  rows[1][0] = "";
+  rows[2][0] = rows[2][0].trim() || PRICE_LABEL;
+  for (let col = 1; col < width; col += 1) {
+    const isQty = col % 2 === 1;
+    rows[1][col] = isQty ? QTY_LABEL : SIZE_LABEL;
+    if (!isQty) {
+      rows[0][col] = "";
+      rows[2][col] = "";
+    }
+  }
+  if (rows.length === 3) {
+    rows.push(Array(width).fill(""));
+  }
+  return rows;
+}
+
+// Entfernt Summenspalte und Gesamtsummenzeile aus einem Excel-Export.
+function stripExportExtras(data) {
+  if (!Array.isArray(data) || !data.length) {
+    return data;
+  }
+  let rows = data.map((row) => (row || []).map((value) => (value === null || value === undefined ? "" : String(value))));
+  rows = rows.filter((row) => String(row[0] ?? "").trim() !== TOTAL_LABEL);
+  const width = rows.reduce((max, row) => Math.max(max, row.length), 0);
+  if (rows.length && String(rows[0][width - 1] ?? "").trim() === SUM_HEADER) {
+    rows = rows.map((row) => row.slice(0, width - 1));
+  }
+  return rows;
+}
+
+function computeTotals(data) {
+  const count = articleCount(data);
+  const priceRow = data[2] || [];
+  const prices = Array.from({ length: count }, (_, i) => parseNumberValue(priceRow[qtyCol(i)]));
+  const hasAnyPrice = prices.some((price) => price !== null);
+  let grand = 0;
+  const rowTotals = data.slice(3).map((row) => {
+    let total = 0;
+    prices.forEach((price, i) => {
+      if (price === null) {
+        return;
+      }
+      const qty = parseNumberValue(row[qtyCol(i)]);
+      if (qty === null) {
+        return;
+      }
+      total += price * qty;
+    });
+    grand += total;
+    return total;
+  });
+  return { prices, hasAnyPrice, rowTotals, grand };
+}
+
+/* ---------- DOM ---------- */
+
+const EDITABLE_KINDS = new Set(["name", "qty", "size", "price"]);
+
+function getCellValue(td) {
+  const el = td.querySelector(".cell-text") ?? td;
+  return el.textContent.trim();
+}
+
+function setCellValue(td, value) {
+  const el = td.querySelector(".cell-text") ?? td;
+  el.textContent = value;
+}
+
+function editableElement(td) {
+  return td.querySelector(".cell-text") ?? td;
+}
+
+function getBodyRows() {
+  return Array.from(tbody.querySelectorAll("tr"))
+    .filter((tr) => !tr.classList.contains("price-row"));
+}
+
+function findCell(rowIndex, col) {
+  return tbody.rows[rowIndex]?.querySelector(`td[data-col="${col}"]`) ?? null;
+}
+
+function createBodyCell(value, col, kind) {
+  const cell = document.createElement("td");
+  cell.dataset.col = String(col);
+  cell.dataset.kind = kind;
+  cell.textContent = value ?? "";
+  if (kind === "qty") {
+    cell.setAttribute("inputmode", "numeric");
+    cell.classList.add("num-cell", "qty-cell");
+  } else if (kind === "price") {
+    cell.setAttribute("inputmode", "decimal");
+    cell.classList.add("num-cell", "price-cell");
+  } else if (kind === "size") {
+    cell.classList.add("size-cell");
+  } else if (kind === "blank") {
+    cell.classList.add("blank-cell");
+  } else if (kind === "label") {
+    cell.classList.add("label-cell");
+  }
+  return cell;
+}
+
+function createNameCell(value) {
+  const cell = document.createElement("td");
+  cell.dataset.col = "0";
+  cell.dataset.kind = "name";
+  cell.className = "name-cell";
+  const wrap = document.createElement("div");
+  wrap.className = "name-wrap";
+  const indicator = document.createElement("span");
+  indicator.className = "row-drag-indicator";
+  indicator.textContent = "☞";
+  indicator.contentEditable = "false";
+  indicator.title = "Zeile verschieben";
+  indicator.setAttribute("aria-hidden", "true");
+  const text = document.createElement("span");
+  text.className = "cell-text";
+  text.textContent = value ?? "";
+  wrap.append(indicator, text);
+  cell.appendChild(wrap);
+  return cell;
+}
+
+function createArticleHeader(value, index) {
+  const th = document.createElement("th");
+  th.colSpan = 2;
+  th.className = "article-header";
+  th.dataset.article = String(index);
+  const wrap = document.createElement("div");
+  wrap.className = "header-wrap";
+  const indicator = document.createElement("span");
+  indicator.className = "drag-indicator";
+  indicator.textContent = "☞";
+  indicator.contentEditable = "false";
+  indicator.title = "Spalte verschieben";
+  indicator.setAttribute("aria-hidden", "true");
+  const text = document.createElement("span");
+  text.className = "header-text";
+  text.textContent = value ?? "";
+  text.setAttribute("aria-label", "Artikelname");
+  wrap.append(indicator, text);
+  th.appendChild(wrap);
+  return th;
+}
+
+function createSubHeader(label, col) {
+  const th = document.createElement("th");
+  th.className = "sub-header";
+  th.dataset.col = String(col);
+  th.textContent = label;
+  const handle = document.createElement("span");
+  handle.className = "col-resize-handle";
+  th.appendChild(handle);
+  return th;
+}
+
+function createFixedHeaderCell(value) {
+  const cell = document.createElement("th");
+  cell.textContent = value;
+  cell.contentEditable = "false";
+  cell.setAttribute("data-fixed", "true");
+  cell.className = "sum-header";
+  return cell;
+}
+
+function createSumCell() {
+  const cell = document.createElement("td");
+  cell.contentEditable = "false";
+  cell.className = "sum-cell";
+  const valueSpan = document.createElement("span");
+  valueSpan.className = "sum-value";
+  cell.appendChild(valueSpan);
+  return cell;
+}
+
+function createDataRow(row, count) {
+  const tr = document.createElement("tr");
+  tr.appendChild(createNameCell(row[0] ?? ""));
+  for (let i = 0; i < count; i += 1) {
+    tr.append(
+      createBodyCell(row[qtyCol(i)] ?? "", qtyCol(i), "qty"),
+      createBodyCell(row[sizeCol(i)] ?? "", sizeCol(i), "size")
+    );
+  }
+  tr.appendChild(createSumCell());
+  return tr;
+}
+
 function buildTable(data) {
   clearTable();
   clearCellSelection();
@@ -389,292 +627,263 @@ function buildTable(data) {
   selectionEnd = null;
   isSelectingCells = false;
   hasDragSelection = false;
-  const normalized = normalizeSheetData(data);
-  const maxCols = normalized.reduce((max, row) => Math.max(max, row.length), 0);
-  const normalizedRows = normalized.map((row, idx) => {
-    const rowValues = Array.from({ length: maxCols }, (_, col) => row[col] ?? "");
-    if (idx === 0 && rowValues.every((value) => value === "")) {
-      if (maxCols === DEFAULT_COLS) {
-        return [...DEFAULT_HEADERS];
-      }
-      return rowValues.map((_, col) => `Column ${col + 1}`);
-    }
-    return rowValues;
-  });
 
-  const headerRow = document.createElement("tr");
-  normalizedRows[0].forEach((value) => {
-    headerRow.appendChild(createHeaderCell(value));
-  });
-  headerRow.appendChild(createFixedHeaderCell(SUM_HEADER));
-  thead.appendChild(headerRow);
-  setupHeaderInteractions();
+  const rows = normalizeSheetData(data);
+  const count = articleCount(rows);
 
-  const priceRow = document.createElement("tr");
-  priceRow.className = "price-row";
-  normalizedRows[1].forEach((value) => {
-    priceRow.appendChild(createBodyCell(value));
-  });
-  priceRow.appendChild(createSumCell());
-  tbody.appendChild(priceRow);
-
-  normalizedRows.slice(2).forEach((row) => {
-    const tr = document.createElement("tr");
-    row.forEach((value) => {
-      tr.appendChild(createBodyCell(value));
-    });
-    tr.appendChild(createSumCell());
-    tbody.appendChild(tr);
-  });
-
-  if (!tbody.children.length) {
-    const tr = document.createElement("tr");
-    normalizedRows[0].forEach(() => {
-      tr.appendChild(createBodyCell(""));
-    });
-    tr.appendChild(createSumCell());
-    tbody.appendChild(tr);
+  const headRow = document.createElement("tr");
+  const nameTh = document.createElement("th");
+  nameTh.rowSpan = 2;
+  nameTh.className = "name-header";
+  nameTh.dataset.fixed = "true";
+  nameTh.textContent = rows[0][0];
+  headRow.appendChild(nameTh);
+  for (let i = 0; i < count; i += 1) {
+    headRow.appendChild(createArticleHeader(rows[0][qtyCol(i)], i));
   }
-  setupRowInteractions();
+  const sumTh = createFixedHeaderCell(SUM_HEADER);
+  sumTh.rowSpan = 2;
+  headRow.appendChild(sumTh);
+
+  const subRow = document.createElement("tr");
+  subRow.className = "sub-header-row";
+  for (let i = 0; i < count; i += 1) {
+    subRow.append(createSubHeader(QTY_LABEL, qtyCol(i)), createSubHeader(SIZE_LABEL, sizeCol(i)));
+  }
+  thead.append(headRow, subRow);
+
+  const priceTr = document.createElement("tr");
+  priceTr.className = "price-row";
+  priceTr.appendChild(createBodyCell(rows[2][0], 0, "label"));
+  for (let i = 0; i < count; i += 1) {
+    priceTr.append(
+      createBodyCell(rows[2][qtyCol(i)], qtyCol(i), "price"),
+      createBodyCell("", sizeCol(i), "blank")
+    );
+  }
+  priceTr.appendChild(createSumCell());
+  tbody.appendChild(priceTr);
+
+  rows.slice(3).forEach((row) => {
+    tbody.appendChild(createDataRow(row, count));
+  });
+
   updateTotals();
   applySheetLockState();
+  markCurrentCell();
 }
 
-function setupHeaderInteractions() {
-  const headerRow = thead.querySelector("tr");
-  if (!headerRow) {
+function collectTableData() {
+  const headers = Array.from(thead.querySelectorAll("th.article-header"));
+  const nameLabel = thead.querySelector("th.name-header")?.textContent.trim() || NAME_LABEL;
+  const headerRow = [nameLabel];
+  const subRow = [""];
+  headers.forEach((th) => {
+    headerRow.push(th.querySelector(".header-text")?.textContent.trim() ?? "", "");
+    subRow.push(QTY_LABEL, SIZE_LABEL);
+  });
+  const width = headerRow.length;
+  const bodyRows = Array.from(tbody.querySelectorAll("tr")).map((tr) => {
+    const row = Array(width).fill("");
+    tr.querySelectorAll("td[data-col]").forEach((td) => {
+      const col = Number(td.dataset.col);
+      if (col < width && td.dataset.kind !== "blank") {
+        row[col] = getCellValue(td);
+      }
+    });
+    return row;
+  });
+  if (!bodyRows.length) {
+    return createEmptyData();
+  }
+  return [headerRow, subRow, ...bodyRows];
+}
+
+function updateTotals() {
+  if (!tbody.querySelector("tr.price-row")) {
     return;
   }
-
-  Array.from(headerRow.children).forEach((th) => {
-    if (th.dataset.fixed === "true") {
-      th.draggable = false;
-      return;
-    }
-    th.draggable = true;
-    th.classList.remove("col-dragging");
-    let indicator = th.querySelector(".drag-indicator");
-    if (!indicator) {
-      indicator = document.createElement("span");
-      indicator.className = "drag-indicator";
-      indicator.textContent = "☞";
-      indicator.contentEditable = "false";
-      indicator.setAttribute("aria-hidden", "true");
-      th.prepend(indicator);
-    }
-    if (indicator && !indicator.dataset.dragReady) {
-      indicator.draggable = true;
-      indicator.dataset.dragReady = "true";
-      indicator.addEventListener("dragstart", (event) => {
-        if (isActiveSheetLocked()) {
-          event.preventDefault();
-          return;
-        }
-        dragSourceIndex = Array.from(th.parentNode.children).indexOf(th);
-        th.classList.add("col-dragging");
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", "");
-      });
-      indicator.addEventListener("dragend", () => {
-        dragSourceIndex = null;
-        th.classList.remove("col-dragging");
-      });
-      setupTouchReorder(indicator, "col");
-    }
-    th.addEventListener("dragstart", (event) => {
-      if (isActiveSheetLocked()) {
-        event.preventDefault();
-        return;
-      }
-      if (event.target.classList.contains("col-resize-handle")) {
-        event.preventDefault();
-        return;
-      }
-      if (event.target.classList.contains("header-text") && document.activeElement === event.target) {
-        event.preventDefault();
-        return;
-      }
-      dragSourceIndex = Array.from(th.parentNode.children).indexOf(th);
-      th.classList.add("col-dragging");
-      event.dataTransfer.effectAllowed = "move";
-    });
-
-    th.addEventListener("dragend", () => {
-      dragSourceIndex = null;
-      th.classList.remove("col-dragging");
-    });
-
-    th.addEventListener("dragover", (event) => {
-      if (isActiveSheetLocked()) {
-        event.preventDefault();
-        return;
-      }
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-    });
-
-    th.addEventListener("drop", (event) => {
-      event.preventDefault();
-      if (isActiveSheetLocked()) {
-        return;
-      }
-      const targetIndex = Array.from(th.parentNode.children).indexOf(th);
-      if (dragSourceIndex === null || dragSourceIndex === targetIndex) {
-        return;
-      }
-      swapColumns(dragSourceIndex, targetIndex);
-      dragSourceIndex = null;
-      renderTabs();
-    });
-
-    if (!th.querySelector(".col-resize-handle")) {
-      const handle = document.createElement("span");
-      handle.className = "col-resize-handle";
-      handle.contentEditable = "false";
-      handle.addEventListener("pointerdown", (event) => {
-        if (isActiveSheetLocked()) {
-          return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        startResize(event, th);
-      });
-      th.appendChild(handle);
+  const data = collectTableData();
+  const { hasAnyPrice, rowTotals, grand } = computeTotals(data);
+  getBodyRows().forEach((tr, index) => {
+    const sumValue = tr.querySelector(".sum-cell .sum-value");
+    if (sumValue) {
+      sumValue.textContent = hasAnyPrice ? formatCurrency(rowTotals[index] ?? 0) : "";
     }
   });
+  if (grandTotalEl) {
+    grandTotalEl.textContent = hasAnyPrice ? `Gesamtsumme: ${formatCurrency(grand)}` : "";
+  }
 }
 
-function setupRowInteractions() {
-  const rows = Array.from(tbody.querySelectorAll("tr"))
-    .filter((row) => !row.classList.contains("price-row"));
-  rows.forEach((row) => {
-    row.draggable = true;
-    row.classList.remove("row-dragging");
-    const firstCell = row.querySelector("td");
-    let indicator = firstCell ? firstCell.querySelector(".row-drag-indicator") : null;
-    if (firstCell && !indicator) {
-      indicator = document.createElement("span");
-      indicator.className = "row-drag-indicator";
-      indicator.textContent = "☞";
-      indicator.contentEditable = "false";
-      indicator.setAttribute("aria-hidden", "true");
-      firstCell.prepend(indicator);
-    }
-    if (indicator && !indicator.dataset.dragReady) {
-      indicator.draggable = true;
-      indicator.dataset.dragReady = "true";
-      indicator.addEventListener("dragstart", (event) => {
-        if (isActiveSheetLocked()) {
-          event.preventDefault();
-          return;
-        }
-        const currentRows = Array.from(tbody.querySelectorAll("tr"))
-          .filter((tr) => !tr.classList.contains("price-row"));
-        dragRowSourceIndex = currentRows.indexOf(row);
-        row.classList.add("row-dragging");
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", "");
-      });
-      indicator.addEventListener("dragend", () => {
-        dragRowSourceIndex = null;
-        row.classList.remove("row-dragging");
-      });
-      setupTouchReorder(indicator, "row");
-    }
+/* ---------- Cursor (zuletzt angeklickte Zelle) ---------- */
 
-    row.addEventListener("dragstart", (event) => {
-      if (isActiveSheetLocked()) {
-        event.preventDefault();
-        return;
-      }
-      if (!event.target.classList.contains("row-drag-indicator")) {
-        event.preventDefault();
-        return;
-      }
-      const currentRows = Array.from(tbody.querySelectorAll("tr"))
-        .filter((tr) => !tr.classList.contains("price-row"));
-      dragRowSourceIndex = currentRows.indexOf(row);
-      row.classList.add("row-dragging");
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", "");
-    });
-
-    row.addEventListener("dragend", () => {
-      dragRowSourceIndex = null;
-      row.classList.remove("row-dragging");
-    });
-
-    row.addEventListener("dragover", (event) => {
-      if (isActiveSheetLocked()) {
-        event.preventDefault();
-        return;
-      }
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-    });
-
-    row.addEventListener("drop", (event) => {
-      event.preventDefault();
-      if (isActiveSheetLocked()) {
-        return;
-      }
-      const currentRows = Array.from(tbody.querySelectorAll("tr"))
-        .filter((tr) => !tr.classList.contains("price-row"));
-      const targetIndex = currentRows.indexOf(row);
-      if (dragRowSourceIndex === null || dragRowSourceIndex === targetIndex) {
-        return;
-      }
-      moveRow(dragRowSourceIndex, targetIndex);
-      dragRowSourceIndex = null;
-      updateTotals();
-    });
+function markCurrentCell() {
+  table.querySelectorAll(".col-current, .row-current").forEach((el) => {
+    el.classList.remove("col-current", "row-current");
   });
-}
-
-function moveRow(fromIndex, toIndex) {
-  if (isActiveSheetLocked()) {
+  if (!currentCell) {
     return;
   }
-  const rows = Array.from(tbody.querySelectorAll("tr"))
-    .filter((row) => !row.classList.contains("price-row"));
-  const row = rows[fromIndex];
-  const target = rows[toIndex];
-  if (!row || !target) {
-    return;
+  const article = articleOfCol(currentCell.col);
+  if (article !== null && article < articleCount(collectTableData())) {
+    table.querySelectorAll(
+      `[data-col="${qtyCol(article)}"], [data-col="${sizeCol(article)}"], th.article-header[data-article="${article}"]`
+    ).forEach((el) => el.classList.add("col-current"));
   }
-  if (fromIndex < toIndex) {
-    tbody.insertBefore(row, target.nextSibling);
-  } else {
-    tbody.insertBefore(row, target);
+  if (currentCell.rowIndex >= 1) {
+    tbody.rows[currentCell.rowIndex]?.classList.add("row-current");
   }
 }
 
-function swapColumns(fromIndex, toIndex) {
-  if (isActiveSheetLocked()) {
+function setCurrentFromElement(target) {
+  if (!(target instanceof Element)) {
     return;
   }
-  const rows = table.querySelectorAll("tr");
-  rows.forEach((row) => {
-    const cells = Array.from(row.children);
-    if (!cells[fromIndex] || !cells[toIndex]) {
-      return;
-    }
-    [cells[fromIndex], cells[toIndex]] = [cells[toIndex], cells[fromIndex]];
-    cells.forEach((cell) => row.appendChild(cell));
+  const td = target.closest("td[data-col]");
+  if (td && tbody.contains(td)) {
+    currentCell = {
+      rowIndex: Array.from(tbody.rows).indexOf(td.parentElement),
+      col: Number(td.dataset.col),
+    };
+    markCurrentCell();
+    return;
+  }
+  const th = target.closest("th.article-header");
+  if (th) {
+    currentCell = { rowIndex: -1, col: qtyCol(Number(th.dataset.article)) };
+    markCurrentCell();
+    return;
+  }
+  const sub = target.closest("th.sub-header");
+  if (sub) {
+    currentCell = { rowIndex: -1, col: Number(sub.dataset.col) };
+    markCurrentCell();
+    return;
+  }
+  if (target.closest("th.name-header")) {
+    currentCell = { rowIndex: -1, col: 0 };
+    markCurrentCell();
+  }
+}
+
+function placeCaretAtEnd(el) {
+  const selection = window.getSelection();
+  if (!selection) {
+    return;
+  }
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function selectAllIn(el) {
+  const selection = window.getSelection();
+  if (!selection) {
+    return;
+  }
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function focusCell(rowIndex, col) {
+  const td = findCell(rowIndex, col);
+  if (!td) {
+    return false;
+  }
+  const el = editableElement(td);
+  if (el.isContentEditable) {
+    el.focus();
+    placeCaretAtEnd(el);
+  }
+  currentCell = { rowIndex, col };
+  markCurrentCell();
+  return true;
+}
+
+/* ---------- Eingabeprüfung ---------- */
+
+function sanitizePrice(text) {
+  let value = String(text ?? "").replace(/[^\d.,]/g, "");
+  const sepIndex = value.search(/[.,]/);
+  if (sepIndex >= 0) {
+    value = value.slice(0, sepIndex + 1) + value.slice(sepIndex + 1).replace(/[.,]/g, "").slice(0, 2);
+  }
+  return value;
+}
+
+function sanitizeByKind(kind, value) {
+  if (kind === "qty") {
+    return String(value ?? "").replace(/\D/g, "").slice(0, 5);
+  }
+  if (kind === "price") {
+    return sanitizePrice(value);
+  }
+  return String(value ?? "");
+}
+
+function sanitizeCell(td) {
+  const kind = td.dataset.kind;
+  if (kind !== "qty" && kind !== "price") {
+    return false;
+  }
+  const text = td.textContent;
+  const clean = sanitizeByKind(kind, text);
+  if (clean !== text) {
+    td.textContent = clean;
+    placeCaretAtEnd(td);
+    return true;
+  }
+  return false;
+}
+
+/* ---------- Verschieben / Spaltenbreite ---------- */
+
+function moveArticle(from, to) {
+  if (isActiveSheetLocked() || from === to || from === null || to === null) {
+    return;
+  }
+  const data = collectTableData();
+  const count = articleCount(data);
+  if (from < 0 || to < 0 || from >= count || to >= count) {
+    return;
+  }
+  data.forEach((row) => {
+    const pair = row.splice(qtyCol(from), 2);
+    row.splice(qtyCol(to), 0, ...pair);
   });
-  updateTotals();
+  commitStructure(data, { rowIndex: -1, col: qtyCol(to) });
+  setStatus("Spalte verschoben.");
+}
+
+function moveDataRow(from, to) {
+  if (isActiveSheetLocked() || from === to || from === null || to === null) {
+    return;
+  }
+  const data = collectTableData();
+  const count = data.length - 3;
+  if (from < 0 || to < 0 || from >= count || to >= count) {
+    return;
+  }
+  const [row] = data.splice(3 + from, 1);
+  data.splice(3 + to, 0, row);
+  commitStructure(data, { rowIndex: to + 1, col: currentCell?.col ?? 0 });
+  setStatus("Zeile verschoben.");
 }
 
 function startResize(event, th) {
   const startX = event.clientX;
   const startWidth = th.offsetWidth;
-  const columnIndex = Array.from(th.parentNode.children).indexOf(th);
+  const col = th.dataset.col;
   document.body.classList.add("no-select");
 
   function onPointerMove(moveEvent) {
     const delta = moveEvent.clientX - startX;
-    const nextWidth = Math.max(80, startWidth + delta);
-    setColumnWidth(columnIndex, nextWidth);
+    setColumnWidth(col, Math.max(56, startWidth + delta));
   }
 
   function onPointerUp() {
@@ -689,157 +898,165 @@ function startResize(event, th) {
   document.addEventListener("pointercancel", onPointerUp);
 }
 
-function getBodyRows() {
-  return Array.from(tbody.querySelectorAll("tr"))
-    .filter((tr) => !tr.classList.contains("price-row"));
+function setColumnWidth(col, width) {
+  table.querySelectorAll(`[data-col="${col}"]`).forEach((cell) => {
+    cell.style.width = `${width}px`;
+    cell.style.minWidth = `${width}px`;
+  });
 }
 
-function setupTouchReorder(indicator, kind) {
-  indicator.addEventListener("pointerdown", (event) => {
-    if (event.pointerType === "mouse" || isActiveSheetLocked()) {
+function clearDropTargets() {
+  table.querySelectorAll(".drop-target").forEach((el) => el.classList.remove("drop-target"));
+}
+
+function resolveDropTarget(element, kind) {
+  if (!(element instanceof Element)) {
+    return null;
+  }
+  if (kind === "col") {
+    return element.closest("th.article-header");
+  }
+  const tr = element.closest("tbody tr");
+  return tr && !tr.classList.contains("price-row") ? tr : null;
+}
+
+// Maus: HTML5 Drag & Drop nur über den Griff
+table.addEventListener("dragstart", (event) => {
+  const indicator = event.target instanceof Element
+    ? event.target.closest(".drag-indicator, .row-drag-indicator")
+    : null;
+  if (!indicator || isActiveSheetLocked()) {
+    event.preventDefault();
+    return;
+  }
+  if (indicator.classList.contains("drag-indicator")) {
+    const th = indicator.closest("th.article-header");
+    dragSourceIndex = Number(th.dataset.article);
+    th.classList.add("col-dragging");
+  } else {
+    const tr = indicator.closest("tr");
+    dragRowSourceIndex = getBodyRows().indexOf(tr);
+    tr.classList.add("row-dragging");
+  }
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", "");
+});
+
+table.addEventListener("dragover", (event) => {
+  const kind = dragSourceIndex !== null ? "col" : dragRowSourceIndex !== null ? "row" : null;
+  if (!kind) {
+    return;
+  }
+  const target = resolveDropTarget(event.target, kind);
+  if (!target) {
+    return;
+  }
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  if (!target.classList.contains("drop-target")) {
+    clearDropTargets();
+    target.classList.add("drop-target");
+  }
+});
+
+table.addEventListener("drop", (event) => {
+  const kind = dragSourceIndex !== null ? "col" : dragRowSourceIndex !== null ? "row" : null;
+  if (!kind) {
+    return;
+  }
+  event.preventDefault();
+  const target = resolveDropTarget(event.target, kind);
+  clearDropTargets();
+  if (!target) {
+    return;
+  }
+  if (kind === "col") {
+    const from = dragSourceIndex;
+    dragSourceIndex = null;
+    moveArticle(from, Number(target.dataset.article));
+  } else {
+    const from = dragRowSourceIndex;
+    dragRowSourceIndex = null;
+    moveDataRow(from, getBodyRows().indexOf(target));
+  }
+});
+
+table.addEventListener("dragend", () => {
+  dragSourceIndex = null;
+  dragRowSourceIndex = null;
+  clearDropTargets();
+  table.querySelectorAll(".col-dragging, .row-dragging").forEach((el) => {
+    el.classList.remove("col-dragging", "row-dragging");
+  });
+});
+
+// Touch/Stift: Verschieben per Pointer Events, Spaltenbreite per Griff
+table.addEventListener("pointerdown", (event) => {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+  const handle = event.target.closest(".col-resize-handle");
+  if (handle) {
+    if (isActiveSheetLocked()) {
       return;
     }
     event.preventDefault();
-    const source = indicator.closest(kind === "col" ? "th" : "tr");
-    if (!source) {
-      return;
-    }
-    const dragClass = kind === "col" ? "col-dragging" : "row-dragging";
-    let currentTarget = null;
-    source.classList.add(dragClass);
-    try {
-      indicator.setPointerCapture(event.pointerId);
-    } catch (error) {
-      // ignore
-    }
-
-    const findTarget = (x, y) => {
-      const el = document.elementFromPoint(x, y);
-      if (!el) {
-        return null;
-      }
-      if (kind === "col") {
-        const th = el.closest("thead th");
-        return th && th.dataset.fixed !== "true" ? th : null;
-      }
-      const tr = el.closest("tbody tr");
-      return tr && !tr.classList.contains("price-row") ? tr : null;
-    };
-
-    const onMove = (moveEvent) => {
-      const target = findTarget(moveEvent.clientX, moveEvent.clientY);
-      if (target === currentTarget) {
-        return;
-      }
-      currentTarget?.classList.remove("drop-target");
-      currentTarget = target && target !== source ? target : null;
-      currentTarget?.classList.add("drop-target");
-    };
-
-    const finish = (endEvent, apply) => {
-      indicator.removeEventListener("pointermove", onMove);
-      indicator.removeEventListener("pointerup", onUp);
-      indicator.removeEventListener("pointercancel", onCancel);
-      source.classList.remove(dragClass);
-      currentTarget?.classList.remove("drop-target");
-      if (!apply || !currentTarget) {
-        return;
-      }
-      if (kind === "col") {
-        const cells = Array.from(source.parentNode.children);
-        swapColumns(cells.indexOf(source), cells.indexOf(currentTarget));
-      } else {
-        const rows = getBodyRows();
-        moveRow(rows.indexOf(source), rows.indexOf(currentTarget));
-        updateTotals();
-      }
-      autosave();
-    };
-    const onUp = (upEvent) => finish(upEvent, true);
-    const onCancel = (cancelEvent) => finish(cancelEvent, false);
-
-    indicator.addEventListener("pointermove", onMove);
-    indicator.addEventListener("pointerup", onUp);
-    indicator.addEventListener("pointercancel", onCancel);
-  });
-}
-
-function setColumnWidth(columnIndex, width) {
-  table.querySelectorAll("tr").forEach((row) => {
-    const cell = row.children[columnIndex];
-    if (cell) {
-      cell.style.width = `${width}px`;
-      cell.style.minWidth = `${width}px`;
-    }
-  });
-}
-
-function collectTableData() {
-  const headers = Array.from(thead.querySelectorAll("th"))
-    .filter((cell) => cell.dataset.fixed !== "true")
-    .map((cell) => {
-      const text = cell.querySelector(".header-text");
-      return text ? text.textContent.trim() : "";
-    });
-  const rows = Array.from(tbody.querySelectorAll("tr")).map((row) =>
-    Array.from(row.querySelectorAll("td"))
-      .filter((cell) => !cell.classList.contains("sum-cell"))
-      .map((cell) => {
-        const indicator = cell.querySelector(".row-drag-indicator");
-        if (!indicator) {
-          return cell.textContent.trim();
-        }
-        const text = cell.textContent.replace(indicator.textContent, "");
-        return text.trim();
-      })
-  );
-  if (!headers.length) {
-    return createEmptyData(0, DEFAULT_COLS);
-  }
-  return [headers, ...rows];
-}
-
-function updateTotals() {
-  const priceRow = tbody.querySelector("tr.price-row");
-  if (!priceRow) {
+    event.stopPropagation();
+    startResize(event, handle.closest("th"));
     return;
   }
-  const priceCells = Array.from(priceRow.querySelectorAll("td"))
-    .filter((cell) => !cell.classList.contains("sum-cell"));
-  const prices = priceCells.map((cell) => parseNumberValue(cell.textContent));
-  const hasAnyPrice = prices.some((value) => value !== null);
-  let grandTotal = 0;
-
-  Array.from(tbody.querySelectorAll("tr"))
-    .filter((row) => !row.classList.contains("price-row"))
-    .forEach((row) => {
-      const cells = Array.from(row.querySelectorAll("td"))
-        .filter((cell) => !cell.classList.contains("sum-cell"));
-      let rowTotal = 0;
-      prices.forEach((price, index) => {
-        if (price === null) {
-          return;
-        }
-        const qty = parseNumberValue(cells[index]?.textContent ?? "");
-        if (qty === null) {
-          return;
-        }
-        rowTotal += price * qty;
-      });
-      const sumCell = row.querySelector(".sum-cell");
-      if (sumCell) {
-        const sumValue = sumCell.querySelector(".sum-value");
-        if (sumValue) {
-          sumValue.textContent = hasAnyPrice ? formatCurrency(rowTotal) : "";
-        }
-      }
-      grandTotal += rowTotal;
-    });
-
-  if (grandTotalEl) {
-    grandTotalEl.textContent = hasAnyPrice ? `Gesamtsumme: ${formatCurrency(grandTotal)}` : "";
+  const indicator = event.target.closest(".drag-indicator, .row-drag-indicator");
+  if (!indicator || event.pointerType === "mouse" || isActiveSheetLocked()) {
+    return;
   }
-}
+  event.preventDefault();
+  const kind = indicator.classList.contains("drag-indicator") ? "col" : "row";
+  const source = indicator.closest(kind === "col" ? "th" : "tr");
+  if (!source) {
+    return;
+  }
+  const dragClass = kind === "col" ? "col-dragging" : "row-dragging";
+  let currentTarget = null;
+  source.classList.add(dragClass);
+  try {
+    indicator.setPointerCapture(event.pointerId);
+  } catch (error) {
+    // ignore
+  }
+
+  const onMove = (moveEvent) => {
+    const target = resolveDropTarget(document.elementFromPoint(moveEvent.clientX, moveEvent.clientY), kind);
+    if (target === currentTarget) {
+      return;
+    }
+    currentTarget?.classList.remove("drop-target");
+    currentTarget = target && target !== source ? target : null;
+    currentTarget?.classList.add("drop-target");
+  };
+
+  const finish = (apply) => {
+    indicator.removeEventListener("pointermove", onMove);
+    indicator.removeEventListener("pointerup", onUp);
+    indicator.removeEventListener("pointercancel", onCancel);
+    source.classList.remove(dragClass);
+    currentTarget?.classList.remove("drop-target");
+    if (!apply || !currentTarget) {
+      return;
+    }
+    if (kind === "col") {
+      moveArticle(Number(source.dataset.article), Number(currentTarget.dataset.article));
+    } else {
+      const rows = getBodyRows();
+      moveDataRow(rows.indexOf(source), rows.indexOf(currentTarget));
+    }
+  };
+  const onUp = () => finish(true);
+  const onCancel = () => finish(false);
+
+  indicator.addEventListener("pointermove", onMove);
+  indicator.addEventListener("pointerup", onUp);
+  indicator.addEventListener("pointercancel", onCancel);
+});
 
 function makeUniqueName(baseName, excludeIndex = null) {
   const trimmed = baseName.trim() || "Sheet";
@@ -1010,6 +1227,7 @@ function removeSheetAt(index, confirmMessage) {
   }
   saveActiveSheet();
   sheets.splice(index, 1);
+  currentCell = null;
   if (activeSheetIndex > index) {
     activeSheetIndex -= 1;
   }
@@ -1028,6 +1246,7 @@ function setActiveSheet(index) {
   }
   saveActiveSheet();
   activeSheetIndex = index;
+  currentCell = null;
   sheets[activeSheetIndex].data = normalizeSheetData(sheets[activeSheetIndex].data);
   buildTable(sheets[activeSheetIndex].data);
   renderTabs();
@@ -1041,6 +1260,7 @@ function addSheet(name) {
   const sheetName = makeUniqueName(name || `Sheet ${sheets.length + 1}`);
   sheets.push({ name: sheetName, data: createEmptyData(), locked: false });
   activeSheetIndex = sheets.length - 1;
+  currentCell = null;
   buildTable(sheets[activeSheetIndex].data);
   renderTabs();
   updateInvoiceSheetOptions();
@@ -1048,117 +1268,142 @@ function addSheet(name) {
   autosave();
 }
 
+function commitStructure(data, focus) {
+  if (sheets[activeSheetIndex]) {
+    sheets[activeSheetIndex].data = data;
+  }
+  buildTable(data);
+  if (focus) {
+    currentCell = focus;
+    markCurrentCell();
+  }
+  autosave();
+}
+
+function uniqueArticleName(data) {
+  const names = new Set();
+  for (let i = 0; i < articleCount(data); i += 1) {
+    names.add(String(data[0][qtyCol(i)] ?? "").trim());
+  }
+  let name = "Neuer Artikel";
+  let n = 2;
+  while (names.has(name)) {
+    name = `Neuer Artikel ${n}`;
+    n += 1;
+  }
+  return name;
+}
+
+function currentDataRowIndex() {
+  // Index der Datenzeile (0 = erste Person), null wenn keine Datenzeile gewählt ist
+  if (!currentCell || currentCell.rowIndex < 1) {
+    return null;
+  }
+  return currentCell.rowIndex - 1;
+}
+
 function addRow() {
   if (!ensureEditable()) {
     return;
   }
-  const columnCount = thead.querySelectorAll("th:not([data-fixed])").length || DEFAULT_COLS;
-  const tr = document.createElement("tr");
-  for (let i = 0; i < columnCount; i += 1) {
-    tr.appendChild(createBodyCell(""));
-  }
-  tr.appendChild(createSumCell());
-  tbody.appendChild(tr);
-  setupRowInteractions();
-  updateTotals();
-  setStatus("Zeile hinzugefügt.");
-  autosave();
-}
-
-function addColumn() {
-  if (!ensureEditable()) {
-    return;
-  }
-  const headerRow = thead.querySelector("tr");
-  if (!headerRow) {
-    buildTable(createEmptyData());
-    return;
-  }
-
-  const dataColumnCount = headerRow.querySelectorAll("th:not([data-fixed])").length;
-  const newHeader = createHeaderCell(`Column ${dataColumnCount + 1}`);
-  const sumHeader = headerRow.querySelector('th[data-fixed="true"]');
-  headerRow.insertBefore(newHeader, sumHeader || null);
-  setupHeaderInteractions();
-
-  Array.from(tbody.querySelectorAll("tr")).forEach((row) => {
-    const sumCell = row.querySelector(".sum-cell");
-    row.insertBefore(createBodyCell(""), sumCell || null);
-  });
-  updateTotals();
-  setStatus("Spalte hinzugefügt.");
-  autosave();
-}
-
-function removeRowAt(index) {
-  if (!ensureEditable()) {
-    return;
-  }
-  const rows = Array.from(tbody.querySelectorAll("tr"))
-    .filter((row) => !row.classList.contains("price-row"));
-  if (rows.length <= 1) {
-    setStatus("Mindestens eine Datenzeile muss bleiben.");
-    return;
-  }
-  if (!window.confirm("Diese Zeile wirklich löschen?")) {
-    return;
-  }
-  const target = rows[index];
-  if (!target) {
-    return;
-  }
-  target.remove();
-  updateTotals();
-  setStatus("Zeile gelöscht.");
-  autosave();
+  const data = collectTableData();
+  const width = data[0].length;
+  const current = currentDataRowIndex();
+  const dataCount = data.length - 3;
+  const insertAt = current === null ? dataCount : Math.min(current + 1, dataCount);
+  data.splice(3 + insertAt, 0, Array(width).fill(""));
+  commitStructure(data, null);
+  focusCell(insertAt + 1, 0);
+  setStatus(current === null ? "Zeile am Ende hinzugefügt." : "Zeile unterhalb eingefügt.");
 }
 
 function removeRow() {
-  const rows = Array.from(tbody.querySelectorAll("tr"))
-    .filter((row) => !row.classList.contains("price-row"));
-  removeRowAt(rows.length - 1);
-}
-
-function removeColumnAt(index) {
   if (!ensureEditable()) {
     return;
   }
-  const headerRow = thead.querySelector("tr");
-  if (!headerRow) {
+  const current = currentDataRowIndex();
+  if (current === null) {
+    setStatus("Bitte zuerst eine Zelle in der Zeile antippen, die gelöscht werden soll.");
     return;
   }
-  const dataHeaders = Array.from(headerRow.querySelectorAll("th:not([data-fixed])"));
-  if (dataHeaders.length <= 1) {
-    setStatus("Mindestens eine Spalte muss bleiben.");
+  const data = collectTableData();
+  const dataCount = data.length - 3;
+  if (dataCount <= 1) {
+    setStatus("Mindestens eine Datenzeile muss bleiben.");
     return;
   }
-  if (!window.confirm("Diese Spalte wirklich löschen?")) {
+  const name = String(data[3 + current]?.[0] ?? "").trim() || "ohne Namen";
+  if (!window.confirm(`Zeile „${name}“ wirklich löschen?`)) {
     return;
   }
-  const targetHeader = dataHeaders[index];
-  if (!targetHeader) {
+  data.splice(3 + current, 1);
+  const nextRow = Math.min(current, dataCount - 2);
+  commitStructure(data, { rowIndex: nextRow + 1, col: currentCell?.col ?? 0 });
+  setStatus("Zeile gelöscht.");
+}
+
+function addColumn(side) {
+  if (!ensureEditable()) {
     return;
   }
-  headerRow.removeChild(targetHeader);
-  Array.from(tbody.querySelectorAll("tr")).forEach((row) => {
-    const cells = Array.from(row.querySelectorAll("td"))
-      .filter((cell) => !cell.classList.contains("sum-cell"));
-    if (cells[index]) {
-      row.removeChild(cells[index]);
+  const data = collectTableData();
+  const count = articleCount(data);
+  let position;
+  if (!currentCell) {
+    position = count;
+  } else if (currentCell.col === 0) {
+    position = 0;
+  } else {
+    const article = articleOfCol(currentCell.col);
+    position = side === "left" ? article : article + 1;
+  }
+  position = Math.max(0, Math.min(position, count));
+  const name = uniqueArticleName(data);
+  data.forEach((row, rowIndex) => {
+    let cells = ["", ""];
+    if (rowIndex === 0) {
+      cells = [name, ""];
+    } else if (rowIndex === 1) {
+      cells = [QTY_LABEL, SIZE_LABEL];
     }
+    row.splice(qtyCol(position), 0, ...cells);
   });
-  updateTotals();
-  setStatus("Spalte gelöscht.");
-  autosave();
+  const keepRow = currentCell?.rowIndex ?? -1;
+  commitStructure(data, { rowIndex: keepRow, col: qtyCol(position) });
+  const headerText = thead.querySelector(`th.article-header[data-article="${position}"] .header-text`);
+  if (headerText && headerText.isContentEditable) {
+    headerText.focus();
+    selectAllIn(headerText);
+  }
+  setStatus(`Spalte „${name}“ eingefügt – Namen einfach überschreiben.`);
 }
 
 function removeColumn() {
-  const headerRow = thead.querySelector("tr");
-  if (!headerRow) {
+  if (!ensureEditable()) {
     return;
   }
-  const dataHeaders = Array.from(headerRow.querySelectorAll("th:not([data-fixed])"));
-  removeColumnAt(dataHeaders.length - 1);
+  const article = currentCell ? articleOfCol(currentCell.col) : null;
+  if (article === null) {
+    setStatus("Bitte zuerst eine Zelle in der Spalte antippen, die gelöscht werden soll.");
+    return;
+  }
+  const data = collectTableData();
+  const count = articleCount(data);
+  if (article >= count) {
+    return;
+  }
+  if (count <= 1) {
+    setStatus("Mindestens eine Spalte muss bleiben.");
+    return;
+  }
+  const name = String(data[0][qtyCol(article)] ?? "").trim() || "ohne Namen";
+  if (!window.confirm(`Spalte „${name}“ (Anzahl und Größe) wirklich löschen?`)) {
+    return;
+  }
+  data.forEach((row) => row.splice(qtyCol(article), 2));
+  const next = Math.min(article, count - 2);
+  commitStructure(data, { rowIndex: currentCell?.rowIndex ?? -1, col: qtyCol(next) });
+  setStatus(`Spalte „${name}“ gelöscht.`);
 }
 
 function removeSheet() {
@@ -1171,21 +1416,14 @@ function tableHasData() {
 
 function getCellCoords(cell) {
   const row = cell.closest("tr");
-  if (!row) {
+  if (!row || cell.dataset.col === undefined) {
     return null;
   }
-  const rows = Array.from(tbody.querySelectorAll("tr"));
-  const rowIndex = rows.indexOf(row);
+  const rowIndex = Array.from(tbody.rows).indexOf(row);
   if (rowIndex === -1) {
     return null;
   }
-  const cells = Array.from(row.querySelectorAll("td"))
-    .filter((td) => !td.classList.contains("sum-cell"));
-  const colIndex = cells.indexOf(cell);
-  if (colIndex === -1) {
-    return null;
-  }
-  return { rowIndex, colIndex };
+  return { rowIndex, colIndex: Number(cell.dataset.col) };
 }
 
 function clearCellSelection() {
@@ -1202,12 +1440,9 @@ function applyCellSelection(start, end) {
   const rowMax = Math.max(start.rowIndex, end.rowIndex);
   const colMin = Math.min(start.colIndex, end.colIndex);
   const colMax = Math.max(start.colIndex, end.colIndex);
-  const rows = Array.from(tbody.querySelectorAll("tr"));
-
-  rows.forEach((row, rowIndex) => {
-    const cells = Array.from(row.querySelectorAll("td"))
-      .filter((td) => !td.classList.contains("sum-cell"));
-    cells.forEach((cell, colIndex) => {
+  Array.from(tbody.rows).forEach((row, rowIndex) => {
+    row.querySelectorAll("td[data-col]").forEach((cell) => {
+      const colIndex = Number(cell.dataset.col);
       const isSelected = rowIndex >= rowMin
         && rowIndex <= rowMax
         && colIndex >= colMin
@@ -1228,47 +1463,121 @@ function triggerDownload(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-function downloadWorkbook() {
+function getSheetsForDownload() {
   saveActiveSheet();
   if (!sheets.length) {
-    addSheet("Sheet 1");
+    return [];
+  }
+  if (downloadScopeSelect?.value === "all") {
+    return sheets;
+  }
+  return [sheets[activeSheetIndex]];
+}
+
+function excelSheetName(name, used) {
+  const base = String(name ?? "").replace(/[\[\]:*?\/\\]/g, "").trim().slice(0, 31) || "Sheet";
+  let candidate = base;
+  let n = 2;
+  while (used.has(candidate.toLowerCase())) {
+    const suffix = ` (${n})`;
+    candidate = base.slice(0, 31 - suffix.length) + suffix;
+    n += 1;
+  }
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+function buildExportSheet(sheet) {
+  const data = normalizeSheetData(sheet.data);
+  const count = articleCount(data);
+  const { hasAnyPrice, rowTotals, grand } = computeTotals(data);
+  const round = (value) => Math.round(value * 100) / 100;
+  const aoa = data.map((row, rowIndex) => {
+    const out = row.map((value, col) => {
+      if (rowIndex >= 2 && col >= 1 && col % 2 === 1 && value !== "") {
+        const number = parseNumberValue(value);
+        return number === null ? value : number;
+      }
+      return value;
+    });
+    if (rowIndex === 0) {
+      out.push(SUM_HEADER);
+    } else if (rowIndex <= 2) {
+      out.push("");
+    } else {
+      out.push(hasAnyPrice ? round(rowTotals[rowIndex - 3]) : "");
+    }
+    return out;
+  });
+  const width = aoa[0].length;
+  if (hasAnyPrice) {
+    const totalRow = Array(width).fill("");
+    totalRow[0] = TOTAL_LABEL;
+    totalRow[width - 1] = round(grand);
+    aoa.push(totalRow);
+  }
+  const merges = [
+    { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } },
+    { s: { r: 0, c: width - 1 }, e: { r: 1, c: width - 1 } },
+  ];
+  for (let i = 0; i < count; i += 1) {
+    merges.push({ s: { r: 0, c: qtyCol(i) }, e: { r: 0, c: sizeCol(i) } });
   }
 
+  const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+  worksheet["!merges"] = merges;
+  worksheet["!cols"] = [{ wch: 30 }, ...Array.from({ length: count * 2 }, () => ({ wch: 10 })), { wch: 12 }];
+  const currencyFormat = '#,##0.00 "€"';
+  const setFormat = (r, c) => {
+    const cell = worksheet[XLSX.utils.encode_cell({ r, c })];
+    if (cell && cell.t === "n") {
+      cell.z = currencyFormat;
+    }
+  };
+  for (let i = 0; i < count; i += 1) {
+    setFormat(2, qtyCol(i));
+  }
+  for (let r = 3; r < aoa.length; r += 1) {
+    setFormat(r, width - 1);
+  }
+  return worksheet;
+}
+
+function downloadWorkbook() {
   if (typeof XLSX === "undefined" || !XLSX.utils) {
     setStatus("Excel-Bibliothek nicht geladen. Bitte Seite neu laden.");
     return;
   }
-
-  const workbook = XLSX.utils.book_new();
-  sheets.forEach((sheet) => {
-    const data = sheet.data.length ? normalizeSheetData(sheet.data) : createEmptyData();
-    const worksheet = XLSX.utils.aoa_to_sheet(data);
-    XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name);
-  });
-  const filename = buildFilename("xlsx");
-  if (typeof XLSX.write === "function") {
-    const arrayBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-    const blob = new Blob([arrayBuffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-    triggerDownload(blob, filename);
-    setStatus(`Downloaded ${filename}`);
+  const list = getSheetsForDownload();
+  if (!list.length) {
     return;
   }
+  const workbook = XLSX.utils.book_new();
+  const used = new Set();
+  list.forEach((sheet) => {
+    XLSX.utils.book_append_sheet(workbook, buildExportSheet(sheet), excelSheetName(sheet.name, used));
+  });
+  const filename = buildFilename("xlsx", list);
   if (typeof XLSX.writeFile === "function") {
     XLSX.writeFile(workbook, filename);
-    setStatus(`Downloaded ${filename}`);
-    return;
+  } else {
+    const arrayBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    triggerDownload(new Blob([arrayBuffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }), filename);
   }
-  setStatus("Excel-Bibliothek konnte nicht herunterladen.");
+  setStatus(`Heruntergeladen: ${filename}`);
 }
 
 function downloadPDF() {
-  saveActiveSheet();
-  if (!sheets.length) {
-    addSheet("Sheet 1");
+  if (!window.jspdf?.jsPDF) {
+    setStatus("PDF-Bibliothek nicht geladen. Bitte Seite neu laden.");
+    return;
   }
-
+  const list = getSheetsForDownload();
+  if (!list.length) {
+    return;
+  }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({
     orientation: pdfOrientationSelect.value,
@@ -1276,63 +1585,108 @@ function downloadPDF() {
     format: "a4",
   });
 
-  sheets.forEach((sheet, index) => {
+  list.forEach((sheet, index) => {
     if (index > 0) {
       doc.addPage();
     }
+    const data = normalizeSheetData(sheet.data);
+    const count = articleCount(data);
+    const width = data[0].length;
+    const { hasAnyPrice, rowTotals, grand } = computeTotals(data);
+    const articles = Array.from({ length: count }, (_, i) => i);
 
-    const data = sheet.data.length ? normalizeSheetData(sheet.data) : createEmptyData();
-    const [headerRow, ...bodyRows] = data;
+    const head = [
+      [
+        { content: data[0][0], rowSpan: 2, styles: { valign: "middle" } },
+        ...articles.map((i) => ({ content: data[0][qtyCol(i)], colSpan: 2, styles: { halign: "center" } })),
+        { content: SUM_HEADER, rowSpan: 2, styles: { valign: "middle", halign: "right" } },
+      ],
+      articles.flatMap(() => [QTY_LABEL, SIZE_LABEL]),
+    ];
+    const priceRow = data[2].map((value, col) => {
+      if (col >= 1 && col % 2 === 1) {
+        const number = parseNumberValue(value);
+        return number === null ? value : formatCurrency(number);
+      }
+      return value;
+    });
+    const body = [
+      [...priceRow, ""],
+      ...data.slice(3).map((row, rowIndex) => [
+        ...row,
+        hasAnyPrice ? formatCurrency(rowTotals[rowIndex] ?? 0) : "",
+      ]),
+    ];
+    const foot = hasAnyPrice
+      ? [[{ content: TOTAL_LABEL, colSpan: width, styles: { halign: "right" } }, formatCurrency(grand)]]
+      : undefined;
 
     doc.setFontSize(14);
     doc.text(sheet.name, 40, 40);
-
     doc.autoTable({
       startY: 60,
-      head: [headerRow],
-      body: bodyRows,
-      styles: {
-        fontSize: 10,
-        cellPadding: 4,
-      },
-      headStyles: {
-        fillColor: [195, 76, 45],
-        textColor: 255,
+      head,
+      body,
+      foot,
+      showFoot: "lastPage",
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [195, 76, 45], textColor: 255 },
+      footStyles: { fillColor: [255, 243, 231], textColor: 20, fontStyle: "bold" },
+      columnStyles: { [width]: { halign: "right" } },
+      didParseCell: (hookData) => {
+        if (hookData.section === "body" && hookData.row.index === 0) {
+          hookData.cell.styles.fillColor = [255, 243, 231];
+          hookData.cell.styles.fontStyle = "bold";
+        }
       },
       theme: "grid",
     });
   });
 
-  const filename = buildFilename("pdf");
+  const filename = buildFilename("pdf", list);
   doc.save(filename);
-  setStatus(`Downloaded ${filename}`);
+  setStatus(`Heruntergeladen: ${filename}`);
 }
 
 async function handleFile(file) {
   if (!file) {
     return;
   }
+  if (typeof XLSX === "undefined" || !XLSX.read) {
+    setStatus("Excel-Bibliothek nicht geladen. Bitte Seite neu laden.");
+    return;
+  }
 
   try {
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: "array" });
-    sheets = workbook.SheetNames.map((sheetName) => {
-      const sheet = workbook.Sheets[sheetName];
-      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: true });
-      return { name: sheetName, data: normalizeSheetData(data), locked: false };
-    });
-
-    if (!sheets.length) {
-      sheets = [{ name: "Sheet 1", data: createEmptyData(), locked: false }];
+    if (!workbook.SheetNames.length) {
+      setStatus("Die Datei enthält keine Tabellenblätter.");
+      return;
     }
+    // Importierte Blätter werden ergänzt, bestehende bleiben erhalten.
+    saveActiveSheet();
+    const firstNew = sheets.length;
+    workbook.SheetNames.forEach((sheetName) => {
+      const sheet = workbook.Sheets[sheetName];
+      const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: "" });
+      sheets.push({
+        name: makeUniqueName(sheetName),
+        data: normalizeSheetData(stripExportExtras(raw)),
+        locked: false,
+      });
+    });
+    const added = sheets.length - firstNew;
 
-    activeSheetIndex = 0;
-    buildTable(sheets[0].data);
+    activeSheetIndex = firstNew;
+    currentCell = null;
+    buildTable(sheets[activeSheetIndex].data);
     renderTabs();
-    setStatus(`Loaded ${file.name} (${sheets.length} sheets)`);
+    autosave();
+    setStatus(`${file.name}: ${added} ${added === 1 ? "Tabellenblatt" : "Tabellenblätter"} hinzugefügt.`);
   } catch (error) {
     console.error(error);
-    setStatus("Could not read file. Please try another .xlsx file.");
+    setStatus("Datei konnte nicht gelesen werden. Bitte eine andere .xlsx-Datei wählen.");
   }
 }
 
@@ -1353,8 +1707,12 @@ removeRowButton.addEventListener("click", () => {
   removeRow();
 });
 
-addColButton.addEventListener("click", () => {
-  addColumn();
+addColLeftButton.addEventListener("click", () => {
+  addColumn("left");
+});
+
+addColRightButton.addEventListener("click", () => {
+  addColumn("right");
 });
 
 removeColButton.addEventListener("click", () => {
@@ -1732,19 +2090,15 @@ function buildSelectedText() {
   if (!range) {
     return "";
   }
-  const rows = Array.from(tbody.querySelectorAll("tr"));
   const lines = [];
   for (let rowIndex = range.rowMin; rowIndex <= range.rowMax; rowIndex += 1) {
-    const row = rows[rowIndex];
-    if (!row) {
+    if (!tbody.rows[rowIndex]) {
       continue;
     }
-    const cells = Array.from(row.querySelectorAll("td"))
-      .filter((td) => !td.classList.contains("sum-cell"));
     const rowValues = [];
-    for (let colIndex = range.colMin; colIndex <= range.colMax; colIndex += 1) {
-      const cell = cells[colIndex];
-      rowValues.push(cell ? cell.textContent.trim() : "");
+    for (let col = range.colMin; col <= range.colMax; col += 1) {
+      const cell = findCell(rowIndex, col);
+      rowValues.push(cell && cell.dataset.kind !== "blank" ? getCellValue(cell) : "");
     }
     lines.push(rowValues.join("\t"));
   }
@@ -1764,21 +2118,14 @@ function applyPasteGrid(startCoords, grid) {
   if (!startCoords || !grid.length) {
     return false;
   }
-  const rows = Array.from(tbody.querySelectorAll("tr"));
   let didChange = false;
   grid.forEach((cells, rowOffset) => {
-    const row = rows[startCoords.rowIndex + rowOffset];
-    if (!row) {
-      return;
-    }
-    const rowCells = Array.from(row.querySelectorAll("td"))
-      .filter((td) => !td.classList.contains("sum-cell"));
     cells.forEach((value, colOffset) => {
-      const cell = rowCells[startCoords.colIndex + colOffset];
-      if (!cell) {
+      const cell = findCell(startCoords.rowIndex + rowOffset, startCoords.colIndex + colOffset);
+      if (!cell || !EDITABLE_KINDS.has(cell.dataset.kind)) {
         return;
       }
-      cell.textContent = value;
+      setCellValue(cell, sanitizeByKind(cell.dataset.kind, String(value).trim()));
       didChange = true;
     });
   });
@@ -1836,9 +2183,76 @@ function handleTableInput(event) {
     event.preventDefault();
     return;
   }
+  const target = event.target instanceof Element ? event.target : null;
+  const td = target?.closest("td[data-kind]");
+  if (td) {
+    sanitizeCell(td);
+  }
   updateTotals();
   autosave();
 }
+
+function moveFocusDown(td) {
+  const coords = getCellCoords(td);
+  if (!coords) {
+    return;
+  }
+  if (!focusCell(coords.rowIndex + 1, coords.colIndex)) {
+    editableElement(td).blur();
+  }
+}
+
+table.addEventListener("beforeinput", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) {
+    return;
+  }
+  const isLineBreak = event.inputType === "insertParagraph" || event.inputType === "insertLineBreak";
+  const headerText = target.closest(".header-text");
+  if (headerText) {
+    if (isLineBreak) {
+      event.preventDefault();
+      headerText.blur();
+    }
+    return;
+  }
+  const td = target.closest("td[data-kind]");
+  if (!td) {
+    return;
+  }
+  if (isLineBreak) {
+    event.preventDefault();
+    moveFocusDown(td);
+    return;
+  }
+  const kind = td.dataset.kind;
+  if ((kind === "qty" || kind === "price") && event.inputType.startsWith("insert") && typeof event.data === "string") {
+    const allowed = kind === "qty" ? /^\d*$/ : /^[\d.,]*$/;
+    if (!allowed.test(event.data)) {
+      event.preventDefault();
+      setStatus(kind === "qty" ? "Bei Anzahl sind nur ganze Zahlen erlaubt." : "Beim Preis sind nur Zahlen erlaubt.");
+    }
+  }
+});
+
+table.addEventListener("keydown", (event) => {
+  // Fallback für Browser ohne beforeinput bei Enter
+  if (event.key !== "Enter" || event.isComposing) {
+    return;
+  }
+  const target = event.target instanceof Element ? event.target : null;
+  const headerText = target?.closest(".header-text");
+  if (headerText) {
+    event.preventDefault();
+    headerText.blur();
+    return;
+  }
+  const td = target?.closest("td[data-kind]");
+  if (td) {
+    event.preventDefault();
+    moveFocusDown(td);
+  }
+});
 
 table.addEventListener("input", handleTableInput);
 table.addEventListener("blur", (event) => {
@@ -1846,8 +2260,58 @@ table.addEventListener("blur", (event) => {
     event.preventDefault();
     return;
   }
+  const target = event.target instanceof Element ? event.target : null;
+  const headerText = target?.closest(".header-text");
+  if (headerText) {
+    const th = headerText.closest("th.article-header");
+    if (!headerText.textContent.trim()) {
+      headerText.textContent = `Artikel ${Number(th?.dataset.article ?? 0) + 1}`;
+    }
+  }
   autosave();
 }, true);
+
+table.addEventListener("focusin", (event) => {
+  setCurrentFromElement(event.target);
+  const target = event.target instanceof Element ? event.target : null;
+  if (target?.classList.contains("header-text") && target.isContentEditable) {
+    // Ganzen Namen markieren, damit er direkt überschrieben werden kann.
+    // Bei Maus/Touch passiert das im click-Handler (nach dem Setzen des Cursors).
+    headerJustFocused = target;
+    selectAllIn(target);
+  }
+});
+
+table.addEventListener("pointerup", (event) => {
+  const target = event.target instanceof Element ? event.target.closest(".header-text") : null;
+  if (target && target === headerJustFocused && document.activeElement === target) {
+    selectAllIn(target);
+  }
+  headerJustFocused = null;
+});
+
+table.addEventListener("click", (event) => {
+  setCurrentFromElement(event.target);
+  const target = event.target instanceof Element ? event.target : null;
+  // Klick auf den Rand einer Namenszelle soll trotzdem ins Textfeld springen
+  const nameCell = target?.closest("td.name-cell");
+  if (nameCell && !target.closest(".cell-text") && !target.closest(".row-drag-indicator")) {
+    const text = nameCell.querySelector(".cell-text");
+    if (text?.isContentEditable) {
+      text.focus();
+      placeCaretAtEnd(text);
+    }
+  }
+  const articleHeader = target?.closest("th.article-header");
+  if (articleHeader && !target.closest(".header-text") && !target.closest(".drag-indicator")) {
+    const text = articleHeader.querySelector(".header-text");
+    if (text?.isContentEditable && document.activeElement !== text) {
+      text.focus();
+      selectAllIn(text);
+    }
+  }
+});
+
 table.addEventListener("contextmenu", (event) => {
   const target = event.target instanceof HTMLElement ? event.target : event.target?.parentElement;
   const cell = target?.closest("td");
@@ -1859,28 +2323,26 @@ table.addEventListener("contextmenu", (event) => {
     buffer.value = buildSelectedText() || " ";
     buffer.focus();
     buffer.select();
-    return;
   }
-  const selection = window.getSelection();
-  if (!selection) {
-    return;
-  }
-  const range = document.createRange();
-  range.selectNodeContents(cell);
-  selection.removeAllRanges();
-  selection.addRange(range);
 });
+
 table.addEventListener("paste", (event) => {
   if (isActiveSheetLocked()) {
     event.preventDefault();
     setStatus("Tabellenblatt ist abgeschlossen.");
     return;
   }
+  const target = event.target instanceof HTMLElement ? event.target : event.target?.parentElement;
+  if (target?.closest(".header-text")) {
+    event.preventDefault();
+    const text = (event.clipboardData?.getData("text/plain") || "").replace(/\s+/g, " ").trim();
+    document.execCommand("insertText", false, text);
+    return;
+  }
   const text = event.clipboardData?.getData("text/plain");
   if (!text) {
     return;
   }
-  const target = event.target instanceof HTMLElement ? event.target : event.target?.parentElement;
   const targetCell = target?.closest("td");
   const coords = targetCell ? getCellCoords(targetCell) : selectionStart;
   if (!coords) {
@@ -1900,6 +2362,9 @@ table.addEventListener("mousedown", (event) => {
     return;
   }
   const target = event.target instanceof HTMLElement ? event.target : event.target?.parentElement;
+  if (target?.closest(".row-drag-indicator, .drag-indicator, .col-resize-handle")) {
+    return;
+  }
   const cell = target?.closest("td");
   if (!cell || cell.classList.contains("sum-cell")) {
     return;
@@ -1908,7 +2373,6 @@ table.addEventListener("mousedown", (event) => {
   if (!coords) {
     return;
   }
-  document.body.classList.add("no-select");
   clearCellSelection();
   selectionStart = coords;
   selectionEnd = coords;
@@ -1937,7 +2401,11 @@ table.addEventListener("mouseover", (event) => {
     return;
   }
   selectionEnd = coords;
-  hasDragSelection = true;
+  if (!hasDragSelection) {
+    hasDragSelection = true;
+    document.body.classList.add("no-select");
+    window.getSelection()?.removeAllRanges();
+  }
   applyCellSelection(selectionStart, selectionEnd);
   event.preventDefault();
 });

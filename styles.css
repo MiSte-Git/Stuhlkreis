@@ -112,6 +112,11 @@ body {
   cursor: pointer;
 }
 
+.group-title {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
 .group-title::-webkit-details-marker {
   display: none;
 }
@@ -432,9 +437,91 @@ button:active {
 .sheet-table th,
 .sheet-table td {
   border: 1px solid var(--line);
-  padding: 10px;
+  padding: 8px 10px;
   text-align: left;
-  min-width: 120px;
+  min-width: 72px;
+}
+
+.sheet-table .name-header,
+.sheet-table .name-cell,
+.sheet-table .label-cell {
+  min-width: 180px;
+}
+
+.sheet-table .article-header {
+  text-align: center;
+  padding: 6px 8px;
+}
+
+.header-wrap,
+.name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sheet-table .header-text {
+  flex: 1 1 auto;
+  min-width: 4ch;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px dashed transparent;
+  cursor: text;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.sheet-table:not(.is-locked) .header-text:hover {
+  border-color: var(--muted);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.name-wrap .cell-text {
+  flex: 1 1 auto;
+  min-height: 1.4em;
+  outline: none;
+}
+
+.sheet-table .sub-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #f8f1e7;
+  text-align: center;
+  padding: 4px 6px;
+}
+
+.sheet-table td.num-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-table td.blank-cell {
+  background: repeating-linear-gradient(45deg, #fbf6ef, #fbf6ef 6px, #f6efe5 6px, #f6efe5 12px);
+}
+
+.price-row td.label-cell {
+  color: var(--muted);
+}
+
+.sheet-table .col-current:not(.cell-selected) {
+  background-color: #fff6ee;
+}
+
+.sheet-table th.col-current {
+  background-color: #ead2bf;
+}
+
+.sheet-table tr.row-current td.name-cell {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.group-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .sheet-table th {
@@ -625,7 +712,7 @@ th.drop-target {
   }
 
   .sheet {
-    padding: 8px;
+    padding: 8px 0;
     border-radius: 14px;
     min-height: 200px;
     -webkit-overflow-scrolling: touch;
@@ -647,10 +734,12 @@ th.drop-target {
   .sheet-table th,
   .sheet-table td {
     padding: 8px 6px;
-    min-width: 72px;
+    min-width: 56px;
   }
 
-  .sheet-table tr > :first-child {
+  .sheet-table .name-header,
+  .sheet-table .name-cell,
+  .sheet-table .label-cell {
     position: sticky;
     left: 0;
     z-index: 2;
@@ -661,7 +750,7 @@ th.drop-target {
     box-shadow: 1px 0 0 var(--line);
   }
 
-  .sheet-table thead tr > :first-child {
+  .sheet-table .name-header {
     z-index: 3;
   }
 

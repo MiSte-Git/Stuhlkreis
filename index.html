@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=2" />
+    <link rel="stylesheet" href="styles.css?v=3" />
   </head>
   <body>
     <header class="site-header">
@@ -37,6 +37,13 @@
                 <input id="fileInput" type="file" accept=".xlsx,.xls" />
                 <span>Excel wählen</span>
               </label>
+              <label class="select-field" for="downloadScope">
+                Herunterladen
+                <select id="downloadScope">
+                  <option value="active" selected>Nur aktuelles Tabellenblatt</option>
+                  <option value="all">Alle Tabellenblätter</option>
+                </select>
+              </label>
               <button id="download" type="button">Excel herunterladen</button>
               <button id="downloadPdf" type="button">PDF herunterladen</button>
               <label class="select-field" for="pdfOrientation">
@@ -53,9 +60,13 @@
             <div class="group-body">
               <button id="newSheet" type="button">Neues Tabellenblatt</button>
               <button id="removeSheet" type="button">Tabellenblatt löschen</button>
-              <button id="addRow" type="button">Zeile hinzufügen</button>
+              <p class="group-hint">Einfügen und Löschen gilt für die zuletzt angetippte Zelle (farbig markiert).</p>
+              <button id="addRow" type="button">Zeile darunter einfügen</button>
               <button id="removeRow" type="button">Zeile löschen</button>
-              <button id="addCol" type="button">Spalte hinzufügen</button>
+              <div class="button-row">
+                <button id="addColLeft" type="button">Spalte links einfügen</button>
+                <button id="addColRight" type="button">Spalte rechts einfügen</button>
+              </div>
               <button id="removeCol" type="button">Spalte löschen</button>
               <button id="toggleLock" type="button">Bestellung abschließen</button>
             </div>
@@ -94,7 +105,7 @@
             </div>
           </details>
         </div>
-        <div id="status" class="status">No file loaded yet.</div>
+        <div id="status" class="status">Bereit.</div>
         <div id="lastSaved" class="meta"></div>
         <div id="grandTotal" class="meta grand-total"></div>
         <div class="tabs">
@@ -121,12 +132,17 @@
     </main>
 
     <footer class="site-footer">
-      In-browser editing using SheetJS.
+      Bearbeitung im Browser, Excel-Export mit SheetJS.
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <script>
+      if (!window.XLSX) {
+        document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"><\/script>');
+      }
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
-    <script src="app.js?v=2"></script>
+    <script src="app.js?v=3"></script>
   </body>
 </html>
