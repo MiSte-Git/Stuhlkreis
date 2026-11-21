@@ -531,6 +531,59 @@ button:active {
   font-weight: 400;
 }
 
+.sheet-table .print-row td {
+  background: #fffaf4;
+}
+
+.sheet-table .print-row td.print-label-cell {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.sheet-table .print-row td.price-cell {
+  font-weight: 600;
+  text-align: center;
+}
+
+.sheet-table .print-row td.price-cell:empty::before {
+  content: "–";
+}
+
+.print-remove {
+  flex: 0 0 auto;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  width: 24px;
+  height: 24px;
+  min-height: 0;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  box-shadow: none;
+}
+
+.print-remove:hover {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  transform: none;
+}
+
+.sheet-table.is-locked .print-remove {
+  display: none;
+}
+
+.sheet-table .unit-row td {
+  background: #ffeede;
+  font-weight: 700;
+}
+
+.sheet-table .unit-row td.unit-cell {
+  text-align: center;
+}
+
 .sheet-table .name-sub {
   background: #f8f1e7;
 }
@@ -830,8 +883,15 @@ th.drop-target {
   }
 
   .tabs-list .tab-add,
-  .tab-remove {
+  .tab-remove,
+  .print-remove {
     width: auto;
     flex: 0 0 auto;
+  }
+
+  .print-remove {
+    width: 28px;
+    height: 28px;
+    min-height: 0;
   }
 }
