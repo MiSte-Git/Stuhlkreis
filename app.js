@@ -3,9 +3,9 @@ const downloadButton = document.getElementById("download");
 const downloadPdfButton = document.getElementById("downloadPdf");
 const pdfOrientationSelect = document.getElementById("pdfOrientation");
 const newSheetButton = document.getElementById("newSheet");
-const addRowButton = document.getElementById("addRow");
-const addColLeftButton = document.getElementById("addColLeft");
-const addColRightButton = document.getElementById("addColRight");
+const addRowButton = document.getElementById("addPerson");
+const addColLeftButton = null;
+const addColRightButton = document.getElementById("addArticle");
 const downloadScopeSelect = document.getElementById("downloadScope");
 const addPrintButton = document.getElementById("addPrint");
 const removeRowButton = document.getElementById("removeRow");
@@ -13,7 +13,15 @@ const removeColButton = document.getElementById("removeCol");
 const removeSheetButton = document.getElementById("removeSheet");
 const toggleLockButton = document.getElementById("toggleLock");
 const printSheetButton = document.getElementById("printSheet");
-const printTitleEl = document.getElementById("printTitle");
+const openExportButton = document.getElementById("openExport");
+const exportDialog = document.getElementById("exportDialog");
+const printFromDialogButton = document.getElementById("printFromDialog");
+const sheetMenuButton = document.getElementById("sheetMenuButton");
+const sheetTitleEl = document.getElementById("sheetTitle");
+const actionSheet = document.getElementById("actionSheet");
+const actionSheetTitle = document.getElementById("actionSheetTitle");
+const actionSheetList = document.getElementById("actionSheetList");
+const invoiceSection = document.getElementById("invoiceSection");
 const invoiceInput = document.getElementById("invoiceInput");
 const invoiceSheetSelect = document.getElementById("invoiceSheet");
 const refreshInvoicesButton = document.getElementById("refreshInvoices");
@@ -110,8 +118,16 @@ function buildFilename(extension, list = sheets) {
   return `${clipped}.${extension}`;
 }
 
+let statusTimer = null;
+
 function setStatus(message) {
+  if (!statusEl) {
+    return;
+  }
   statusEl.textContent = message;
+  statusEl.classList.toggle("is-visible", Boolean(message));
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => statusEl.classList.remove("is-visible"), 3500);
 }
 
 function setLastSaved(timestamp) {
@@ -124,7 +140,8 @@ function setLastSaved(timestamp) {
     lastSavedEl.textContent = "";
     return;
   }
-  lastSavedEl.textContent = `Letzte Speicherung: ${savedAt.toLocaleString()}`;
+  lastSavedEl.textContent = `✓ Gespeichert ${savedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  lastSavedEl.title = `Letzte Speicherung: ${savedAt.toLocaleString()}`;
 }
 
 function isActiveSheetLocked() {
@@ -175,12 +192,13 @@ function applySheetLockState() {
   });
   setActionDisabled(removeSheetButton, locked);
 
-  tabsList.querySelectorAll(".tab-name").forEach((tabName) => {
+  tabsList?.querySelectorAll(".tab-name").forEach((tabName) => {
     tabName.contentEditable = locked ? "false" : "true";
   });
 
   if (toggleLockButton) {
-    toggleLockButton.textContent = locked ? "Bestellung wieder öffnen" : "Bestellung abschließen";
+    toggleLockButton.textContent = locked ? "🔓 Öffnen" : "🔒 Abschließen";
+    toggleLockButton.title = locked ? "Bestellung wieder öffnen" : "Bestellung abschließen";
     toggleLockButton.setAttribute("aria-pressed", locked ? "true" : "false");
   }
 }
@@ -533,6 +551,24 @@ function normalizeSheetData(data) {
   return rows;
 }
 
+// Bezahlt-Häkchen aus einem eigenen Excel-Export lesen
+function extractImportPaid(raw) {
+  if (!Array.isArray(raw) || !raw.length) {
+    return undefined;
+  }
+  const width = raw.reduce((max, row) => Math.max(max, row?.length ?? 0), 0);
+  if (String(raw[0]?.[width - 1] ?? "").trim() !== PAID_HEADER) {
+    return undefined;
+  }
+  const subIndex = raw.findIndex((row, index) => index > 0 && isQtyLabel(row?.[1]) && isSizeLabel(row?.[2]));
+  if (subIndex < 0) {
+    return undefined;
+  }
+  return raw.slice(subIndex + 1)
+    .filter((row) => String(row?.[0] ?? "").trim() !== TOTAL_LABEL)
+    .map((row) => String(row?.[width - 1] ?? "").trim() !== "");
+}
+
 // Entfernt Summenspalte und Gesamtsummenzeile aus einem Excel-Export.
 function stripExportExtras(data) {
   if (!Array.isArray(data) || !data.length) {
@@ -540,7 +576,11 @@ function stripExportExtras(data) {
   }
   let rows = data.map((row) => (row || []).map((value) => (value === null || value === undefined ? "" : String(value))));
   rows = rows.filter((row) => String(row[0] ?? "").trim() !== TOTAL_LABEL);
-  const width = rows.reduce((max, row) => Math.max(max, row.length), 0);
+  let width = rows.reduce((max, row) => Math.max(max, row.length), 0);
+  if (rows.length && String(rows[0][width - 1] ?? "").trim() === PAID_HEADER) {
+    rows = rows.map((row) => row.slice(0, width - 1));
+    width -= 1;
+  }
   if (rows.length && String(rows[0][width - 1] ?? "").trim() === SUM_HEADER) {
     rows = rows.map((row) => row.slice(0, width - 1));
   }
@@ -644,7 +684,14 @@ function createNameCell(value) {
   const text = document.createElement("span");
   text.className = "cell-text";
   text.textContent = value ?? "";
-  wrap.append(indicator, text);
+  const menu = document.createElement("button");
+  menu.type = "button";
+  menu.className = "row-menu-btn";
+  menu.textContent = "⋮";
+  menu.title = "Zeile bearbeiten";
+  menu.setAttribute("aria-label", "Zeile bearbeiten");
+  menu.contentEditable = "false";
+  wrap.append(indicator, text, menu);
   cell.appendChild(wrap);
   return cell;
 }
@@ -732,7 +779,14 @@ function createArticleHeader(value, index) {
   text.className = "header-text";
   text.textContent = value ?? "";
   text.setAttribute("aria-label", "Artikelname");
-  wrap.append(indicator, text);
+  const menu = document.createElement("button");
+  menu.type = "button";
+  menu.className = "col-menu-btn";
+  menu.textContent = "⋮";
+  menu.title = "Artikel bearbeiten";
+  menu.setAttribute("aria-label", "Artikel bearbeiten");
+  menu.contentEditable = "false";
+  wrap.append(indicator, text, menu);
   const handle = document.createElement("span");
   handle.className = "col-resize-handle";
   handle.title = "Breite ändern";
@@ -1480,71 +1534,33 @@ function renderSheetSelect() {
 }
 
 function renderTabs() {
-  tabsList.innerHTML = "";
-  const index = activeSheetIndex;
-  const sheet = sheets[index];
-  if (sheet) {
-    const button = document.createElement("div");
-    button.className = "tab";
-    if (sheet.locked) {
-      button.classList.add("is-locked");
-      button.title = "Bestellung abgeschlossen";
-    }
-    button.setAttribute("role", "tab");
-    button.setAttribute("aria-selected", "true");
-
-    const nameSpan = document.createElement("span");
-    nameSpan.className = "tab-name";
-    nameSpan.textContent = sheet.name;
-    nameSpan.contentEditable = sheet.locked ? "false" : "true";
-    nameSpan.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        nameSpan.blur();
-      }
-    });
-    nameSpan.addEventListener("blur", () => {
-      if (sheet.locked) {
-        nameSpan.textContent = sheet.name;
-        return;
-      }
-      const updated = makeUniqueName(nameSpan.textContent, index);
-      if (updated === sheets[index].name) {
-        nameSpan.textContent = updated;
-        return;
-      }
-      sheets[index].name = updated;
-      nameSpan.textContent = updated;
-      renderSheetSelect();
-      updateInvoiceSheetOptions();
-      autosave();
-    });
-
-    const removeButton = document.createElement("button");
-    removeButton.type = "button";
-    removeButton.className = "tab-remove";
-    removeButton.textContent = "−";
-    removeButton.title = "Tabellenblatt löschen";
-    removeButton.setAttribute("aria-label", "Tabellenblatt löschen");
-    removeButton.disabled = sheets.length <= 1 || sheet.locked;
-    removeButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-      removeSheetAt(index, `Tabellenblatt "${sheet.name}" wirklich löschen?`);
-    });
-
-    button.append(nameSpan, removeButton);
-    tabsList.appendChild(button);
+  const sheet = sheets[activeSheetIndex];
+  if (sheetTitleEl) {
+    sheetTitleEl.textContent = sheet ? sheet.name : "";
+    sheetTitleEl.classList.toggle("is-locked", Boolean(sheet?.locked));
+    sheetTitleEl.disabled = !sheet || Boolean(sheet.locked);
   }
-  const addTabButton = document.createElement("button");
-  addTabButton.type = "button";
-  addTabButton.className = "tab tab-add";
-  addTabButton.textContent = "+";
-  addTabButton.title = "Neues Tabellenblatt";
-  addTabButton.setAttribute("aria-label", "Neues Tabellenblatt");
-  addTabButton.addEventListener("click", () => addSheet());
-  tabsList.appendChild(addTabButton);
   renderSheetSelect();
   updateInvoiceSheetOptions();
+}
+
+function renameActiveSheet() {
+  const sheet = sheets[activeSheetIndex];
+  if (!sheet || sheet.locked) {
+    return;
+  }
+  const input = window.prompt("Name des Tabellenblatts", sheet.name);
+  if (input === null || !input.trim()) {
+    return;
+  }
+  const updated = makeUniqueName(input, activeSheetIndex);
+  if (updated === sheet.name) {
+    return;
+  }
+  sheet.name = updated;
+  renderTabs();
+  autosave();
+  setStatus(`Umbenannt in „${updated}“.`);
 }
 
 if (sheetSelect) {
@@ -1613,7 +1629,7 @@ function setActiveSheet(index) {
   renderTabs();
   updateInvoiceSheetOptions();
   applySheetLockState();
-  setStatus(`Switched to ${sheets[activeSheetIndex].name}`);
+  setStatus(`Tabellenblatt: ${sheets[activeSheetIndex].name}`);
 }
 
 function addSheet(name) {
@@ -1625,7 +1641,7 @@ function addSheet(name) {
   buildTable(sheets[activeSheetIndex].data);
   renderTabs();
   updateInvoiceSheetOptions();
-  setStatus(`Added ${sheetName}`);
+  setStatus(`Tabellenblatt „${sheetName}“ angelegt.`);
   autosave();
 }
 
@@ -1664,22 +1680,25 @@ function currentDataRowIndex() {
   return currentCell.rowIndex;
 }
 
-function addRow() {
+// position: Index der neuen Zeile; ohne Angabe unter der aktuellen Zeile bzw. am Ende
+function addRow(position) {
   if (!ensureEditable()) {
     return;
   }
   const data = collectTableData();
   const width = data[0].length;
-  const current = currentDataRowIndex();
+  const current = position === undefined ? currentDataRowIndex() : null;
   const start = dataStart(data);
   const dataCount = data.length - start;
-  const insertAt = current === null ? dataCount : Math.min(current + 1, dataCount);
+  const insertAt = position !== undefined
+    ? Math.max(0, Math.min(position, dataCount))
+    : current === null ? dataCount : Math.min(current + 1, dataCount);
   data.splice(start + insertAt, 0, Array(width).fill(""));
   const paid = collectPaid();
   paid.splice(insertAt, 0, false);
   commitStructure(data, null, paid);
   focusCell(insertAt, 0);
-  setStatus(current === null ? "Zeile am Ende hinzugefügt." : "Zeile unterhalb eingefügt.");
+  setStatus("Zeile eingefügt – Namen eintragen.");
 }
 
 function removeRow() {
@@ -1918,15 +1937,15 @@ function buildExportSheet(sheet) {
   const pairRow = (label, values) => {
     const row = [label];
     values.forEach((value) => row.push(value, ""));
-    row.push("");
+    row.push("", "");
     return row;
   };
 
   const aoa = [];
-  aoa.push([...data[0], SUM_HEADER]);
+  aoa.push([...data[0], SUM_HEADER, PAID_HEADER]);
   aoa.push(pairRow(data[2][0], articles.map((i) => toNumber(data[2][qtyCol(i)]))));
   for (let p = 0; p < prints; p += 1) {
-    const row = Array(count * 2 + 2).fill("");
+    const row = Array(count * 2 + 3).fill("");
     row[0] = data[3 + p][0];
     row[1] = toNumber(data[3 + p][1]);
     aoa.push(row);
@@ -1935,21 +1954,29 @@ function buildExportSheet(sheet) {
     aoa.push(pairRow(UNIT_PRICE_LABEL, prices.map((price) => (price === null ? "" : round(price)))));
   }
   const subIndex = aoa.length;
-  aoa.push(["", ...data[1].slice(1), ""]);
+  aoa.push(["", ...data[1].slice(1), "", ""]);
+  const paidFlags = Array.isArray(sheet.paid) ? sheet.paid : [];
   data.slice(start).forEach((row, index) => {
     const out = row.map((value, col) => (col >= 1 && col % 2 === 1 ? toNumber(value) : value));
     out.push(hasAnyPrice ? round(rowTotals[index]) : "");
+    out.push(paidFlags[index] ? "✓" : "");
     aoa.push(out);
   });
   const width = aoa[0].length;
-  if (hasAnyPrice) {
-    const totalRow = Array(width).fill("");
-    totalRow[0] = TOTAL_LABEL;
-    totalRow[width - 1] = round(grand);
-    aoa.push(totalRow);
-  }
+  const bodyData = data.slice(start);
+  const totalRow = Array(width).fill("");
+  totalRow[0] = TOTAL_LABEL;
+  articles.forEach((i) => {
+    totalRow[qtyCol(i)] = bodyData.reduce((sum, row) => sum + (parseNumberValue(row[qtyCol(i)]) ?? 0), 0);
+  });
+  totalRow[width - 2] = hasAnyPrice ? round(grand) : "";
+  totalRow[width - 1] = `${bodyData.filter((_, i) => paidFlags[i]).length}/${bodyData.length}`;
+  aoa.push(totalRow);
 
-  const merges = [{ s: { r: 0, c: width - 1 }, e: { r: subIndex, c: width - 1 } }];
+  const merges = [
+    { s: { r: 0, c: width - 2 }, e: { r: subIndex, c: width - 2 } },
+    { s: { r: 0, c: width - 1 }, e: { r: subIndex, c: width - 1 } },
+  ];
   for (let r = 0; r < subIndex; r += 1) {
     if (r >= 2 && r < 2 + prints) {
       if (count > 0) {
@@ -1964,7 +1991,7 @@ function buildExportSheet(sheet) {
 
   const worksheet = XLSX.utils.aoa_to_sheet(aoa);
   worksheet["!merges"] = merges;
-  worksheet["!cols"] = [{ wch: 30 }, ...Array.from({ length: count * 2 }, () => ({ wch: 10 })), { wch: 12 }];
+  worksheet["!cols"] = [{ wch: 30 }, ...Array.from({ length: count * 2 }, () => ({ wch: 10 })), { wch: 12 }, { wch: 9 }];
   const currencyFormat = '#,##0.00 "€"';
   const setFormat = (r, c) => {
     const cell = worksheet[XLSX.utils.encode_cell({ r, c })];
@@ -1978,7 +2005,7 @@ function buildExportSheet(sheet) {
     }
   }
   for (let r = subIndex + 1; r < aoa.length; r += 1) {
-    setFormat(r, width - 1);
+    setFormat(r, width - 2);
   }
   return worksheet;
 }
@@ -2009,14 +2036,10 @@ function downloadWorkbook() {
   setStatus(`Heruntergeladen: ${filename}`);
 }
 
-function downloadPDF() {
+function buildPdf(list) {
   if (!window.jspdf?.jsPDF) {
     setStatus("PDF-Bibliothek nicht geladen. Bitte Seite neu laden.");
-    return;
-  }
-  const list = getSheetsForDownload();
-  if (!list.length) {
-    return;
+    return null;
   }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({
@@ -2055,6 +2078,7 @@ function downloadPDF() {
         { content: data[0][0], styles: { valign: "middle" } },
         ...articles.map((i) => ({ content: data[0][qtyCol(i)], colSpan: 2, styles: { halign: "center" } })),
         { content: SUM_HEADER, rowSpan: headerRowCount, styles: { valign: "middle", halign: "right" } },
+        { content: PAID_HEADER, rowSpan: headerRowCount, styles: { valign: "middle", halign: "center" } },
       ],
       moneyRow(data[2][0], articles.map((i) => data[2][qtyCol(i)])),
       ...Array.from({ length: prints }, (_, p) => {
@@ -2071,15 +2095,23 @@ function downloadPDF() {
       ...(prints ? [moneyRow(UNIT_PRICE_LABEL, prices.map((price) => (price === null ? "" : price)), { fontStyle: "bold" })] : []),
       ["", ...articles.flatMap(() => [QTY_LABEL, SIZE_LABEL])],
     ];
-    const body = [
-      ...data.slice(dataStart(data)).map((row, rowIndex) => [
-        ...row,
-        hasAnyPrice ? formatCurrency(rowTotals[rowIndex] ?? 0) : "",
-      ]),
-    ];
-    const foot = hasAnyPrice
-      ? [[{ content: TOTAL_LABEL, colSpan: width, styles: { halign: "right" } }, formatCurrency(grand)]]
-      : undefined;
+    const paidFlags = Array.isArray(sheet.paid) ? sheet.paid : [];
+    const bodyData = data.slice(dataStart(data));
+    const body = bodyData.map((row, rowIndex) => [
+      ...row,
+      hasAnyPrice ? formatCurrency(rowTotals[rowIndex] ?? 0) : "",
+      paidFlags[rowIndex] ? "ja" : "",
+    ]);
+    const qtySums = articles.map((i) =>
+      bodyData.reduce((sum, row) => sum + (parseNumberValue(row[qtyCol(i)]) ?? 0), 0));
+    const totalQty = qtySums.reduce((sum, value) => sum + value, 0);
+    const paidCount = bodyData.filter((_, rowIndex) => paidFlags[rowIndex]).length;
+    const foot = [[
+      `${FOOT_LABEL} (${totalQty} Artikel)`,
+      ...qtySums.flatMap((sum) => [{ content: String(sum), styles: { halign: "center" } }, ""]),
+      { content: hasAnyPrice ? formatCurrency(grand) : "", styles: { halign: "right" } },
+      { content: `${paidCount}/${bodyData.length}`, styles: { halign: "center" } },
+    ]];
 
     doc.setFontSize(14);
     doc.text(sheet.name, 40, 40);
@@ -2092,14 +2124,51 @@ function downloadPDF() {
       styles: { fontSize: 9, cellPadding: 3 },
       headStyles: { fillColor: [195, 76, 45], textColor: 255 },
       footStyles: { fillColor: [255, 243, 231], textColor: 20, fontStyle: "bold" },
-      columnStyles: { [width]: { halign: "right" } },
+      columnStyles: { [width]: { halign: "right" }, [width + 1]: { halign: "center" } },
+      didParseCell: (hook) => {
+        if (hook.section === "body" && paidFlags[hook.row.index]) {
+          hook.cell.styles.fillColor = [232, 232, 232];
+          hook.cell.styles.textColor = [120, 120, 120];
+        }
+      },
       theme: "grid",
     });
   });
+  return doc;
+}
 
+function downloadPDF() {
+  const list = getSheetsForDownload();
+  if (!list.length) {
+    return;
+  }
+  const doc = buildPdf(list);
+  if (!doc) {
+    return;
+  }
   const filename = buildFilename("pdf", list);
   doc.save(filename);
   setStatus(`Heruntergeladen: ${filename}`);
+}
+
+// Drucken = genau das PDF, mit Druckdialog (am Handy: PDF öffnet sich, dann Teilen → Drucken)
+function printPdf(list) {
+  if (!list.length) {
+    return;
+  }
+  const doc = buildPdf(list);
+  if (!doc) {
+    return;
+  }
+  doc.autoPrint();
+  const url = doc.output("bloburl");
+  const win = window.open(url, "_blank");
+  if (!win) {
+    doc.save(buildFilename("pdf", list));
+    setStatus("Pop-up blockiert – PDF wurde heruntergeladen, bitte von dort drucken.");
+    return;
+  }
+  setStatus("PDF zum Drucken geöffnet.");
 }
 
 async function handleFile(file) {
@@ -2132,6 +2201,7 @@ async function handleFile(file) {
       sheets.push({
         name: makeUniqueName(sheetName),
         data: normalizeSheetData(stripExportExtras(raw)),
+        paid: extractImportPaid(raw),
         locked: false,
       });
     });
@@ -2158,11 +2228,11 @@ newSheetButton.addEventListener("click", () => {
   addSheet();
 });
 
-addRowButton.addEventListener("click", () => {
-  addRow();
+addRowButton?.addEventListener("click", () => {
+  addRow(Number.MAX_SAFE_INTEGER);
 });
 
-removeRowButton.addEventListener("click", () => {
+removeRowButton?.addEventListener("click", () => {
   removeRow();
 });
 
@@ -2170,19 +2240,20 @@ addPrintButton?.addEventListener("click", () => {
   addPrintRow();
 });
 
-addColLeftButton.addEventListener("click", () => {
+addColLeftButton?.addEventListener("click", () => {
   addColumn("left");
 });
 
-addColRightButton.addEventListener("click", () => {
+addColRightButton?.addEventListener("click", () => {
+  currentCell = null;
   addColumn("right");
 });
 
-removeColButton.addEventListener("click", () => {
+removeColButton?.addEventListener("click", () => {
   removeColumn();
 });
 
-removeSheetButton.addEventListener("click", () => {
+removeSheetButton?.addEventListener("click", () => {
   removeSheet();
 });
 
@@ -2207,10 +2278,12 @@ if (toggleLockButton) {
 
 downloadButton.addEventListener("click", () => {
   downloadWorkbook();
+  closeDialog(exportDialog);
 });
 
 downloadPdfButton.addEventListener("click", () => {
   downloadPDF();
+  closeDialog(exportDialog);
 });
 
 function updateInvoiceSheetOptions() {
@@ -2280,12 +2353,7 @@ function updateInvoiceCount(filtered) {
   if (!invoiceCountEl) {
     return;
   }
-  const selectedSheet = getCurrentInvoiceSheetName();
-  if (!selectedSheet) {
-    invoiceCountEl.textContent = `${filtered.length} Rechnungen`;
-    return;
-  }
-  invoiceCountEl.textContent = `${filtered.length} Rechnungen für "${selectedSheet}"`;
+  invoiceCountEl.textContent = filtered.length ? String(filtered.length) : "";
 }
 
 function renderInvoicePreviewList(filtered) {
@@ -2293,32 +2361,54 @@ function renderInvoicePreviewList(filtered) {
     return;
   }
   invoicePreviewList.innerHTML = "";
+  if (invoiceSearchInput) {
+    const sheetName = getCurrentInvoiceSheetName();
+    const sheetTotal = invoices.filter((invoice) => (invoice.sheet_name || "").trim() === sheetName).length;
+    invoiceSearchInput.hidden = sheetTotal <= 5 && !invoiceSearchInput.value;
+  }
   if (!filtered.length) {
     const empty = document.createElement("div");
-    empty.className = "meta";
-    empty.textContent = "Keine Rechnungen für dieses Sheet.";
+    empty.className = "invoice-empty";
+    empty.textContent = invoiceSearchInput?.value ? "Keine Treffer." : "Noch keine Rechnungen für dieses Tabellenblatt.";
     invoicePreviewList.appendChild(empty);
     return;
   }
   filtered.forEach((invoice) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "invoice-preview-item";
-    button.textContent = invoice.original_name || "Rechnung";
-    button.dataset.invoiceId = String(invoice.id);
-    if (invoiceSelect && invoiceSelect.value === String(invoice.id)) {
-      button.classList.add("is-active");
-    }
-    button.addEventListener("click", () => {
-      if (invoiceSelect) {
-        invoiceSelect.value = String(invoice.id);
-      }
-      hasUserSelectedInvoice = true;
-      updateInvoiceActionsState();
-      updateInvoicePreview();
-      updateInvoiceList();
-    });
-    invoicePreviewList.appendChild(button);
+    const id = String(invoice.id);
+    const item = document.createElement("div");
+    item.className = "invoice-item";
+    const info = document.createElement("div");
+    info.className = "invoice-info";
+    const name = document.createElement("strong");
+    name.textContent = invoice.original_name || "Rechnung";
+    const date = document.createElement("small");
+    const timestamp = invoice.uploaded_at ? new Date(invoice.uploaded_at) : null;
+    date.textContent = timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toLocaleString() : "";
+    info.append(name, date);
+    const actions = document.createElement("div");
+    actions.className = "invoice-actions";
+    const makeButton = (label, title, handler, extraClass = "") => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `icon-btn ${extraClass}`.trim();
+      button.textContent = label;
+      button.title = title;
+      button.setAttribute("aria-label", `${title}: ${invoice.original_name || "Rechnung"}`);
+      button.addEventListener("click", () => {
+        if (invoiceSelect) {
+          invoiceSelect.value = id;
+        }
+        handler();
+      });
+      return button;
+    };
+    actions.append(
+      makeButton("👁", "Ansehen", () => openInvoice(true)),
+      makeButton("⬇", "Herunterladen", () => openInvoice(false)),
+      makeButton("🗑", "Löschen", () => deleteSelectedInvoice(), "is-danger")
+    );
+    item.append(info, actions);
+    invoicePreviewList.appendChild(item);
   });
 }
 
@@ -2417,7 +2507,11 @@ async function uploadInvoice() {
   if (!invoiceInput) {
     return;
   }
-  const files = Array.from(invoiceInput.files || []);
+  await uploadInvoiceFiles(Array.from(invoiceInput.files || []));
+  invoiceInput.value = "";
+}
+
+async function uploadInvoiceFiles(files) {
   if (!files.length) {
     setStatus("Bitte mindestens eine PDF auswählen.");
     return;
@@ -2434,7 +2528,6 @@ async function uploadInvoice() {
     for (const file of files) {
       await uploadSingleInvoice(file, sheetName);
     }
-    invoiceInput.value = "";
     setStatus(files.length === 1 ? "Rechnung hochgeladen." : "Rechnungen hochgeladen.");
     await fetchInvoices();
   } catch (error) {
@@ -2479,8 +2572,8 @@ if (downloadInvoiceButton) {
   downloadInvoiceButton.addEventListener("click", () => openInvoice(false));
 }
 
-if (deleteInvoiceButton) {
-  deleteInvoiceButton.addEventListener("click", async () => {
+async function deleteSelectedInvoice() {
+  {
     if (!invoiceSelect || !invoiceSelect.value) {
       setStatus("Bitte eine Rechnung auswählen.");
       return;
@@ -2512,7 +2605,11 @@ if (deleteInvoiceButton) {
       console.error(error);
       setStatus(`Rechnung löschen fehlgeschlagen: ${error.message}`);
     }
-  });
+  }
+}
+
+if (deleteInvoiceButton) {
+  deleteInvoiceButton.addEventListener("click", deleteSelectedInvoice);
 }
 
 if (invoiceSearchInput) {
@@ -2614,7 +2711,9 @@ function ensureCopyBuffer() {
 }
 
 async function saveNow() {
-  setStatus("Auto-Speichern...");
+  if (lastSavedEl) {
+    lastSavedEl.textContent = "Speichert …";
+  }
   try {
     const response = await fetch("api/save.php", {
       method: "POST",
@@ -2624,7 +2723,6 @@ async function saveNow() {
     const result = await readJsonResponse(response);
     if (result.ok && result.data.status === "ok") {
       setLastSaved(result.data.updated_at);
-      setStatus("Auto-gespeichert.");
       return true;
     }
     const message = result.data?.message || "Unbekannter Fehler";
@@ -2780,7 +2878,7 @@ table.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : null;
   // Klick auf den Rand einer Namenszelle soll trotzdem ins Textfeld springen
   const nameCell = target?.closest("td.name-cell, td.print-label-cell");
-  if (nameCell && !target.closest(".cell-text") && !target.closest(".row-drag-indicator, .print-remove")) {
+  if (nameCell && !target.closest(".cell-text") && !target.closest(".row-drag-indicator, .print-remove, .row-menu-btn")) {
     const text = nameCell.querySelector(".cell-text");
     if (text?.isContentEditable) {
       text.focus();
@@ -2788,7 +2886,7 @@ table.addEventListener("click", (event) => {
     }
   }
   const articleHeader = target?.closest("th.article-header");
-  if (articleHeader && !target.closest(".header-text, .drag-indicator, .col-resize-handle")) {
+  if (articleHeader && !target.closest(".header-text, .drag-indicator, .col-resize-handle, .col-menu-btn")) {
     const text = articleHeader.querySelector(".header-text");
     if (text?.isContentEditable && document.activeElement !== text) {
       text.focus();
@@ -2847,7 +2945,7 @@ table.addEventListener("mousedown", (event) => {
     return;
   }
   const target = event.target instanceof HTMLElement ? event.target : event.target?.parentElement;
-  if (target?.closest(".row-drag-indicator, .drag-indicator, .col-resize-handle")) {
+  if (target?.closest(".row-drag-indicator, .drag-indicator, .col-resize-handle, .row-menu-btn, .col-menu-btn")) {
     return;
   }
   const cell = target?.closest("td");
@@ -2934,25 +3032,192 @@ table.addEventListener("change", (event) => {
   setStatus(input.checked ? "Als bezahlt markiert." : "Bezahlt-Markierung entfernt.");
 });
 
-function preparePrint() {
+/* ---------- Bedienung: Menüs und Dialoge ---------- */
+
+function openDialog(dialog) {
+  if (!dialog) {
+    return;
+  }
+  if (typeof dialog.showModal === "function") {
+    dialog.showModal();
+  } else {
+    dialog.setAttribute("open", "");
+  }
+}
+
+function closeDialog(dialog) {
+  if (!dialog) {
+    return;
+  }
+  if (typeof dialog.close === "function") {
+    dialog.close();
+  } else {
+    dialog.removeAttribute("open");
+  }
+}
+
+[exportDialog, actionSheet].forEach((dialog) => {
+  dialog?.addEventListener("click", (event) => {
+    // Klick auf den abgedunkelten Hintergrund oder "Schließen"
+    if (event.target === dialog || (event.target instanceof Element && event.target.closest("[data-close]"))) {
+      closeDialog(dialog);
+    }
+  });
+});
+
+function openActionSheet(title, actions) {
+  if (!actionSheet || !actionSheetList) {
+    return;
+  }
+  actionSheetTitle.textContent = title;
+  actionSheetList.innerHTML = "";
+  actions.forEach((action) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `action-item${action.danger ? " is-danger" : ""}`;
+    button.textContent = action.label;
+    button.disabled = Boolean(action.disabled);
+    button.addEventListener("click", () => {
+      closeDialog(actionSheet);
+      action.run();
+    });
+    actionSheetList.appendChild(button);
+  });
+  openDialog(actionSheet);
+}
+
+function openRowMenu(rowIndex) {
+  const rows = getBodyRows();
+  const tr = rows[rowIndex];
+  if (!tr || isActiveSheetLocked()) {
+    return;
+  }
+  const name = tr.querySelector(".cell-text")?.textContent.trim() || "Zeile ohne Namen";
+  openActionSheet(name, [
+    { label: "↑ Nach oben schieben", disabled: rowIndex === 0, run: () => moveDataRow(rowIndex, rowIndex - 1) },
+    { label: "↓ Nach unten schieben", disabled: rowIndex >= rows.length - 1, run: () => moveDataRow(rowIndex, rowIndex + 1) },
+    { label: "＋ Person darüber einfügen", run: () => addRow(rowIndex) },
+    { label: "＋ Person darunter einfügen", run: () => addRow(rowIndex + 1) },
+    {
+      label: "🗑 Zeile löschen",
+      danger: true,
+      disabled: rows.length <= 1,
+      run: () => {
+        currentCell = { rowIndex, col: 0 };
+        removeRow();
+      },
+    },
+  ]);
+}
+
+function openColumnMenu(article) {
+  const th = thead.querySelector(`th.article-header[data-article="${article}"]`);
+  if (!th || isActiveSheetLocked()) {
+    return;
+  }
+  const count = thead.querySelectorAll("th.article-header").length;
+  const name = th.querySelector(".header-text")?.textContent.trim() || "Artikel";
+  const select = () => {
+    currentCell = { rowIndex: -1, col: qtyCol(article) };
+  };
+  openActionSheet(name, [
+    {
+      label: "✎ Umbenennen",
+      run: () => {
+        const text = thead.querySelector(`th.article-header[data-article="${article}"] .header-text`);
+        if (text?.isContentEditable) {
+          text.focus();
+          selectAllIn(text);
+        }
+      },
+    },
+    { label: "← Nach links schieben", disabled: article === 0, run: () => moveArticle(article, article - 1) },
+    { label: "→ Nach rechts schieben", disabled: article >= count - 1, run: () => moveArticle(article, article + 1) },
+    { label: "＋ Artikel links einfügen", run: () => { select(); addColumn("left"); } },
+    { label: "＋ Artikel rechts einfügen", run: () => { select(); addColumn("right"); } },
+    { label: "🗑 Artikel löschen", danger: true, disabled: count <= 1, run: () => { select(); removeColumn(); } },
+  ]);
+}
+
+function openSheetMenu() {
   const sheet = sheets[activeSheetIndex];
-  if (printTitleEl) {
-    printTitleEl.textContent = sheet ? `${sheet.name}${sheet.locked ? " (abgeschlossen)" : ""}` : "";
-  }
-  if (document.activeElement instanceof HTMLElement) {
-    document.activeElement.blur();
-  }
+  const locked = Boolean(sheet?.locked);
+  const lockedCount = sheets.filter((item) => item.locked).length;
+  openActionSheet(sheet?.name || "Tabellenblatt", [
+    { label: "✎ Umbenennen", disabled: locked, run: renameActiveSheet },
+    { label: "＋ Neues Tabellenblatt", run: () => addSheet() },
+    { label: "📥 Excel importieren", run: () => fileInput.click() },
+    {
+      label: showLockedSheets
+        ? "Abgeschlossene ausblenden"
+        : `Abgeschlossene anzeigen${lockedCount ? ` (${lockedCount})` : ""}`,
+      disabled: !lockedCount && !showLockedSheets,
+      run: () => {
+        showLockedSheets = !showLockedSheets;
+        writeShowLocked(showLockedSheets);
+        renderSheetSelect();
+      },
+    },
+    {
+      label: "🗑 Tabellenblatt löschen",
+      danger: true,
+      disabled: locked || sheets.length <= 1,
+      run: removeSheet,
+    },
+  ]);
 }
 
-function printActiveSheet() {
-  preparePrint();
-  window.print();
-}
+table.addEventListener("click", (event) => {
+  const button = event.target instanceof Element ? event.target.closest(".row-menu-btn, .col-menu-btn") : null;
+  if (!button) {
+    return;
+  }
+  event.preventDefault();
+  if (button.classList.contains("row-menu-btn")) {
+    openRowMenu(getBodyRows().indexOf(button.closest("tr")));
+  } else {
+    openColumnMenu(Number(button.closest("th.article-header")?.dataset.article));
+  }
+});
 
-if (printSheetButton) {
-  printSheetButton.addEventListener("click", printActiveSheet);
+sheetMenuButton?.addEventListener("click", openSheetMenu);
+sheetTitleEl?.addEventListener("click", renameActiveSheet);
+openExportButton?.addEventListener("click", () => openDialog(exportDialog));
+printSheetButton?.addEventListener("click", () => {
+  saveActiveSheet();
+  if (sheets[activeSheetIndex]) {
+    printPdf([sheets[activeSheetIndex]]);
+  }
+});
+printFromDialogButton?.addEventListener("click", () => {
+  printPdf(getSheetsForDownload());
+  closeDialog(exportDialog);
+});
+
+// Rechnungen per Ziehen und Ablegen hochladen (PC)
+if (invoiceSection) {
+  const hasFiles = (event) => Array.from(event.dataTransfer?.types || []).includes("Files");
+  invoiceSection.addEventListener("dragover", (event) => {
+    if (!hasFiles(event)) {
+      return;
+    }
+    event.preventDefault();
+    invoiceSection.classList.add("is-dragover");
+  });
+  invoiceSection.addEventListener("dragleave", (event) => {
+    if (!invoiceSection.contains(event.relatedTarget)) {
+      invoiceSection.classList.remove("is-dragover");
+    }
+  });
+  invoiceSection.addEventListener("drop", (event) => {
+    if (!hasFiles(event)) {
+      return;
+    }
+    event.preventDefault();
+    invoiceSection.classList.remove("is-dragover");
+    void uploadInvoiceFiles(Array.from(event.dataTransfer.files || []));
+  });
 }
-window.addEventListener("beforeprint", preparePrint);
 
 async function autoload() {
   try {

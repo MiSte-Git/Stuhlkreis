@@ -1030,20 +1030,6 @@ th.drop-target {
 
 /* ---------- Drucken ---------- */
 
-.print-button {
-  display: block;
-  width: 100%;
-  margin: 0 0 12px;
-  padding: 14px 20px;
-  font-size: 17px;
-  background: #2f5d8a;
-  border-radius: 14px;
-}
-
-.print-title {
-  display: none;
-}
-
 @media print {
   body {
     background: #ffffff;
@@ -1053,6 +1039,14 @@ th.drop-target {
   .site-header,
   .panel,
   .site-footer,
+  .toolbar,
+  .grand-total,
+  .sheet-add,
+  .sheet-hint,
+  .toast,
+  dialog,
+  .row-menu-btn,
+  .col-menu-btn,
   .drag-indicator,
   .row-drag-indicator,
   .col-resize-handle,
@@ -1076,10 +1070,8 @@ th.drop-target {
     overflow: visible;
   }
 
-  .print-title {
-    display: block;
-    margin: 0 0 10px;
-    font-size: 18px;
+  .sheet-title::after {
+    content: none !important;
   }
 
   .sheet-table {
@@ -1134,4 +1126,460 @@ th.drop-target {
     max-width: 40vw;
     box-shadow: 1px 0 0 var(--line);
   }
+}
+
+/* ---------- Neue Bedienung: Aktionsleiste, Dialoge, Rechnungen ---------- */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: grid;
+  gap: 10px;
+  padding: 12px 16px;
+}
+
+.toolbar-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sheet-picker {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sheet-picker select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font: inherit;
+  font-weight: 700;
+  background: #fff;
+  color: var(--text);
+}
+
+.icon-btn {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 18px;
+  line-height: 1;
+  background: #f3ebe0;
+  color: var(--text);
+}
+
+.icon-btn.is-danger {
+  color: #b3261e;
+}
+
+.toolbar-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.action-btn {
+  min-height: 44px;
+  padding: 10px 8px;
+  border-radius: 12px;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.action-print {
+  background: #2f5d8a;
+}
+
+.action-lock {
+  background: #6a5f52;
+}
+
+#toggleLock[aria-pressed="true"] {
+  background: #2f7a3e;
+}
+
+.save-state {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+  min-height: 1em;
+}
+
+.ghost-btn {
+  background: transparent;
+  color: var(--accent);
+  border: 1.5px dashed var(--accent);
+  border-radius: 12px;
+  min-height: 44px;
+  padding: 8px 16px;
+}
+
+.ghost-btn:hover {
+  box-shadow: none;
+}
+
+.sheet-title {
+  display: block;
+  margin: 0 0 12px;
+  padding: 4px 0;
+  background: none;
+  color: var(--text);
+  border-radius: 0;
+  font-size: 22px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.sheet-title:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.sheet-title::after {
+  content: " ✎";
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.sheet-title.is-locked::after {
+  content: " 🔒 abgeschlossen";
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sheet-title:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.sheet {
+  overflow: visible;
+}
+
+.sheet-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sheet-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.sheet-table.is-locked ~ .sheet-add,
+.sheet-scroll:has(.is-locked) + .sheet-add {
+  display: none;
+}
+
+.sheet-hint {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.row-menu-btn,
+.col-menu-btn {
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.row-menu-btn:hover,
+.col-menu-btn:hover {
+  background: #f3ebe0;
+  box-shadow: none;
+  transform: none;
+}
+
+.sheet-table.is-locked .row-menu-btn,
+.sheet-table.is-locked .col-menu-btn {
+  display: none;
+}
+
+/* Dialoge: am PC mittig, am Handy als Blatt von unten */
+.sheet-dialog {
+  border: none;
+  border-radius: 18px;
+  padding: 0;
+  width: min(440px, calc(100vw - 24px));
+  max-height: 85vh;
+  color: var(--text);
+  background: var(--panel);
+  box-shadow: 0 24px 48px -20px rgba(0, 0, 0, 0.45);
+}
+
+.sheet-dialog::backdrop {
+  background: rgba(29, 26, 20, 0.4);
+}
+
+.dialog-body {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+}
+
+.dialog-body h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.dialog-body .select-field select {
+  min-height: 44px;
+  border-radius: 12px;
+  font: inherit;
+}
+
+.dialog-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.dialog-close {
+  width: 100%;
+}
+
+.action-list {
+  display: grid;
+  gap: 6px;
+}
+
+.action-item {
+  width: 100%;
+  min-height: 48px;
+  text-align: left;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #f8f1e7;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.action-item:hover {
+  transform: none;
+  box-shadow: none;
+  background: #f1e4d4;
+}
+
+.action-item.is-danger {
+  color: #b3261e;
+}
+
+.action-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Einblendung für Meldungen */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  transform: translate(-50%, 20px);
+  max-width: calc(100vw - 32px);
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #1d1a14;
+  color: #fff;
+  font-size: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 50;
+}
+
+.toast.is-visible {
+  opacity: 0.94;
+  transform: translate(-50%, 0);
+}
+
+/* Rechnungen */
+.invoices {
+  display: grid;
+  gap: 12px;
+}
+
+.invoices.is-dragover {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+}
+
+.invoices-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 18px;
+}
+
+.count-badge:not(:empty) {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.upload-btn {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.invoice-search {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font: inherit;
+}
+
+.invoice-list {
+  display: grid;
+  gap: 8px;
+}
+
+.invoice-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffaf4;
+}
+
+.invoice-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+}
+
+.invoice-info strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invoice-info small {
+  color: var(--muted);
+}
+
+.invoice-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.invoice-empty {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.drop-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@media (pointer: coarse) {
+  .drop-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .toolbar {
+    padding: 10px;
+    border-radius: 0 0 14px 14px;
+    margin: -12px -12px 0;
+  }
+
+  .toolbar .icon-btn,
+  .invoice-actions .icon-btn,
+  .sheet-table .row-menu-btn,
+  .sheet-table .col-menu-btn,
+  .sheet-title {
+    width: auto;
+  }
+
+  .action-btn {
+    font-size: 14px;
+    padding: 10px 4px;
+  }
+
+  .sheet-add .ghost-btn {
+    flex: 1 1 0;
+    width: auto;
+  }
+
+  .sheet-dialog {
+    width: 100%;
+    max-width: 100%;
+    margin: auto 0 0;
+    border-radius: 18px 18px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .dialog-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .invoices-head .upload-btn {
+    width: 100%;
+  }
+
+  .sheet-title {
+    font-size: 19px;
+  }
+}
+
+@media (max-width: 720px) {
+  .sheet-title,
+  .sheet-add,
+  .sheet-hint {
+    margin-left: 10px;
+    margin-right: 10px;
+  }
+}
+
+/* Tabelle scrollt in sich, nicht die ganze Seite */
+.container > * {
+  min-width: 0;
+}
+
+.save-state:empty {
+  display: none;
 }

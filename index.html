@@ -28,113 +28,94 @@
     </header>
 
     <main class="container">
-      <section class="panel">
-        <div class="controls">
-          <details class="control-group">
-            <summary class="group-title">Datei</summary>
-            <div class="group-body">
-              <label class="file-input">
-                <input id="fileInput" type="file" accept=".xlsx,.xls" />
-                <span>Excel wählen</span>
-              </label>
-              <label class="select-field" for="downloadScope">
-                Herunterladen
-                <select id="downloadScope">
-                  <option value="active" selected>Nur aktuelles Tabellenblatt</option>
-                  <option value="all">Alle Tabellenblätter</option>
-                </select>
-              </label>
-              <button id="download" type="button">Excel herunterladen</button>
-              <button id="downloadPdf" type="button">PDF herunterladen</button>
-              <label class="select-field" for="pdfOrientation">
-                PDF-Format
-                <select id="pdfOrientation">
-                  <option value="portrait">Hochformat</option>
-                  <option value="landscape" selected>Querformat</option>
-                </select>
-              </label>
-            </div>
-          </details>
-          <details class="control-group">
-            <summary class="group-title">Tabelle</summary>
-            <div class="group-body">
-              <button id="newSheet" type="button">Neues Tabellenblatt</button>
-              <button id="removeSheet" type="button">Tabellenblatt löschen</button>
-              <p class="group-hint">Einfügen und Löschen gilt für die zuletzt angetippte Zelle (farbig markiert).</p>
-              <button id="addRow" type="button">Zeile darunter einfügen</button>
-              <button id="removeRow" type="button">Zeile löschen</button>
-              <div class="button-row">
-                <button id="addColLeft" type="button">Spalte links einfügen</button>
-                <button id="addColRight" type="button">Spalte rechts einfügen</button>
-              </div>
-              <button id="removeCol" type="button">Spalte löschen</button>
-              <button id="addPrint" type="button">Druckposition hinzufügen</button>
-              <button id="toggleLock" type="button">Bestellung abschließen</button>
-            </div>
-          </details>
-          <details class="control-group">
-            <summary class="group-title">Rechnungen</summary>
-            <div class="group-body">
-              <label class="file-input">
-                <input id="invoiceInput" type="file" accept="application/pdf" multiple />
-                <span>Rechnungen hochladen</span>
-              </label>
-              <label class="select-field" for="invoiceSheet">
-                Zu Tabellenblatt
-                <select id="invoiceSheet"></select>
-              </label>
-              <button id="refreshInvoices" type="button">Liste aktualisieren</button>
-              <label class="select-field" for="invoiceSelect">
-                Gespeicherte Rechnungen
-                <select id="invoiceSelect"></select>
-              </label>
-              <div id="invoiceCount" class="meta invoice-count"></div>
-              <label class="select-field" for="invoiceSearch">
-                Suche/Filter
-                <input id="invoiceSearch" type="text" placeholder="Sheet, Dateiname, Datum" />
-              </label>
-              <div class="button-row">
-                <button id="viewInvoice" type="button">Rechnung ansehen</button>
-                <button id="downloadInvoice" type="button">Rechnung herunterladen</button>
-                <button id="deleteInvoice" type="button">Rechnung löschen</button>
-              </div>
-              <div class="invoice-preview">
-                <div class="invoice-preview-title">Vorschau</div>
-                <div id="invoicePreviewList" class="invoice-preview-list"></div>
-                <iframe id="invoicePreview" title="PDF Vorschau"></iframe>
-              </div>
-            </div>
-          </details>
+      <section class="panel toolbar" aria-label="Aktionen">
+        <div class="toolbar-row">
+          <label class="sheet-picker" for="sheetSelect">
+            <span class="visually-hidden">Tabellenblatt wechseln</span>
+            <select id="sheetSelect"></select>
+          </label>
+          <button id="newSheet" type="button" class="icon-btn" title="Neues Tabellenblatt" aria-label="Neues Tabellenblatt">＋</button>
+          <button id="sheetMenuButton" type="button" class="icon-btn" title="Weitere Aktionen" aria-label="Weitere Aktionen">⋯</button>
         </div>
-        <div id="status" class="status">Bereit.</div>
-        <div id="lastSaved" class="meta"></div>
-        <div id="grandTotal" class="meta grand-total"></div>
-        <div class="tabs">
-          <div class="tabs-switch">
-            <label class="select-field sheet-select-field" for="sheetSelect">
-              Tabellenblatt wechseln
-              <select id="sheetSelect"></select>
-            </label>
-            <label class="toggle-field" for="showLocked">
-              <input id="showLocked" type="checkbox" />
-              <span>Abgeschlossene anzeigen</span>
-            </label>
-          </div>
-          <button id="printSheet" type="button" class="print-button" title="Aktuelles Tabellenblatt drucken">
-            🖨️ Tabellenblatt drucken
-          </button>
-          <div id="sheetTabs" class="tabs-list" aria-label="Aktives Tabellenblatt" role="tablist"></div>
+        <div class="toolbar-row toolbar-actions">
+          <button id="openExport" type="button" class="action-btn">⬇ Export</button>
+          <button id="printSheet" type="button" class="action-btn action-print">🖨 Drucken</button>
+          <button id="toggleLock" type="button" class="action-btn action-lock">🔒 Abschließen</button>
         </div>
+        <div id="lastSaved" class="save-state"></div>
       </section>
 
+      <div id="grandTotal" class="meta grand-total"></div>
+
       <section class="sheet" aria-live="polite">
-        <h2 id="printTitle" class="print-title"></h2>
-        <table id="sheetTable" class="sheet-table">
-          <thead></thead>
-          <tbody></tbody>
-        </table>
+        <button id="sheetTitle" type="button" class="sheet-title" title="Tabellenblatt umbenennen"></button>
+        <div class="sheet-scroll">
+          <table id="sheetTable" class="sheet-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="sheet-add">
+          <button id="addPerson" type="button" class="ghost-btn">＋ Person</button>
+          <button id="addArticle" type="button" class="ghost-btn">＋ Artikel</button>
+        </div>
+        <p class="sheet-hint">Tipp: Über ⋮ bei Name oder Artikel kannst du einfügen, verschieben und löschen.</p>
+      </section>
+
+      <section id="invoiceSection" class="panel invoices" aria-label="Rechnungen">
+        <div class="invoices-head">
+          <h2 class="section-title">Rechnungen <span id="invoiceCount" class="count-badge"></span></h2>
+          <label class="file-input upload-btn">
+            <input id="invoiceInput" type="file" accept="application/pdf" multiple />
+            <span>＋ Rechnung hochladen</span>
+          </label>
+        </div>
+        <input id="invoiceSearch" class="invoice-search" type="search" placeholder="Rechnungen durchsuchen" hidden />
+        <div id="invoicePreviewList" class="invoice-list"></div>
+        <p class="drop-hint">PDF-Dateien kannst du auch hierher ziehen.</p>
+        <select id="invoiceSheet" hidden aria-hidden="true"></select>
+        <select id="invoiceSelect" hidden aria-hidden="true"></select>
       </section>
     </main>
+
+    <div id="status" class="toast" role="status" aria-live="polite"></div>
+
+    <dialog id="exportDialog" class="sheet-dialog" aria-labelledby="exportTitle">
+      <div class="dialog-body">
+        <h3 id="exportTitle">Export und Drucken</h3>
+        <label class="select-field" for="downloadScope">
+          Umfang
+          <select id="downloadScope">
+            <option value="active" selected>Nur aktuelles Tabellenblatt</option>
+            <option value="all">Alle Tabellenblätter</option>
+          </select>
+        </label>
+        <label class="select-field" for="pdfOrientation">
+          Seitenformat (PDF und Druck)
+          <select id="pdfOrientation">
+            <option value="portrait">Hochformat</option>
+            <option value="landscape" selected>Querformat</option>
+          </select>
+        </label>
+        <div class="dialog-actions">
+          <button id="download" type="button" class="action-btn">⬇ Excel</button>
+          <button id="downloadPdf" type="button" class="action-btn">⬇ PDF</button>
+          <button id="printFromDialog" type="button" class="action-btn action-print">🖨 Drucken</button>
+        </div>
+        <button type="button" class="ghost-btn dialog-close" data-close>Schließen</button>
+      </div>
+    </dialog>
+
+    <dialog id="actionSheet" class="sheet-dialog" aria-labelledby="actionSheetTitle">
+      <div class="dialog-body">
+        <h3 id="actionSheetTitle"></h3>
+        <div id="actionSheetList" class="action-list"></div>
+        <button type="button" class="ghost-btn dialog-close" data-close>Abbrechen</button>
+      </div>
+    </dialog>
+
+    <input id="fileInput" type="file" accept=".xlsx,.xls" hidden />
+    <input id="showLocked" type="checkbox" hidden />
 
     <footer class="site-footer">
       Bearbeitung im Browser, Excel-Export mit SheetJS.
