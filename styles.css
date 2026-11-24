@@ -974,3 +974,164 @@ th.drop-target {
     min-height: 0;
   }
 }
+
+/* ---------- Bezahlt-Spalte und Summenzeile ---------- */
+
+.paid-header {
+  text-align: center;
+  background: #ecd8c8;
+  min-width: 72px;
+}
+
+.sheet-table td.paid-cell {
+  text-align: center;
+  vertical-align: middle;
+  background: #f9f3ea;
+}
+
+.paid-check {
+  width: 22px;
+  height: 22px;
+  accent-color: #2f7a3e;
+  cursor: pointer;
+  margin: 0;
+}
+
+.sheet-table tbody tr.is-paid td:not(.cell-selected) {
+  background: #ececec;
+  color: #8f8f8f;
+}
+
+.sheet-table tbody tr.is-paid td.name-cell .cell-text,
+.sheet-table tbody tr.is-paid td.sum-cell {
+  text-decoration: line-through;
+}
+
+.sheet-table tfoot td {
+  font-weight: 700;
+  background: #fff3e7;
+  border-top: 2px solid var(--accent);
+}
+
+.sheet-table tfoot td.total-qty {
+  text-align: center;
+}
+
+.sheet-table tfoot td.total-sum {
+  text-align: right;
+  background: #ecd8c8;
+}
+
+.sheet-table tfoot td.total-paid {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ---------- Drucken ---------- */
+
+.print-button {
+  display: block;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 14px 20px;
+  font-size: 17px;
+  background: #2f5d8a;
+  border-radius: 14px;
+}
+
+.print-title {
+  display: none;
+}
+
+@media print {
+  body {
+    background: #ffffff;
+    min-height: 0;
+  }
+
+  .site-header,
+  .panel,
+  .site-footer,
+  .drag-indicator,
+  .row-drag-indicator,
+  .col-resize-handle,
+  .add-print-inline,
+  .print-remove,
+  .price-note {
+    display: none !important;
+  }
+
+  .container {
+    padding: 0;
+    margin: 0;
+    max-width: none;
+  }
+
+  .sheet {
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .print-title {
+    display: block;
+    margin: 0 0 10px;
+    font-size: 18px;
+  }
+
+  .sheet-table {
+    width: 100%;
+    min-width: 0;
+    font-size: 11px;
+  }
+
+  .sheet-table th,
+  .sheet-table td,
+  .sheet-table .name-header,
+  .sheet-table .name-sub,
+  .sheet-table .name-cell,
+  .sheet-table .label-cell {
+    position: static;
+    min-width: 0;
+    max-width: none;
+    padding: 4px 6px;
+    box-shadow: none;
+  }
+
+  .sheet-table .col-current:not(.cell-selected),
+  .sheet-table th.col-current {
+    background-color: inherit;
+  }
+
+  .sheet-table tr.row-current td.name-cell {
+    box-shadow: none;
+  }
+
+  .sheet-table td.cell-selected {
+    outline: none;
+  }
+
+  .sheet-table tr {
+    break-inside: avoid;
+  }
+
+  .sheet-table,
+  .sheet-table * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+@media (max-width: 720px) {
+  .sheet-table tfoot td.total-label {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    min-width: 110px;
+    max-width: 40vw;
+    box-shadow: 1px 0 0 var(--line);
+  }
+}

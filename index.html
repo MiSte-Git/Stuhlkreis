@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=10" />
+    <link rel="stylesheet" href="styles.css?v=11" />
   </head>
   <body>
     <header class="site-header">
@@ -120,11 +120,15 @@
               <span>Abgeschlossene anzeigen</span>
             </label>
           </div>
+          <button id="printSheet" type="button" class="print-button" title="Aktuelles Tabellenblatt drucken">
+            🖨️ Tabellenblatt drucken
+          </button>
           <div id="sheetTabs" class="tabs-list" aria-label="Aktives Tabellenblatt" role="tablist"></div>
         </div>
       </section>
 
       <section class="sheet" aria-live="polite">
+        <h2 id="printTitle" class="print-title"></h2>
         <table id="sheetTable" class="sheet-table">
           <thead></thead>
           <tbody></tbody>
@@ -144,6 +148,6 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
-    <script src="app.js?v=10"></script>
+    <script src="app.js?v=11"></script>
   </body>
 </html>

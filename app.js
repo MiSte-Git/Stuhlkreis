@@ -12,6 +12,8 @@ const removeRowButton = document.getElementById("removeRow");
 const removeColButton = document.getElementById("removeCol");
 const removeSheetButton = document.getElementById("removeSheet");
 const toggleLockButton = document.getElementById("toggleLock");
+const printSheetButton = document.getElementById("printSheet");
+const printTitleEl = document.getElementById("printTitle");
 const invoiceInput = document.getElementById("invoiceInput");
 const invoiceSheetSelect = document.getElementById("invoiceSheet");
 const refreshInvoicesButton = document.getElementById("refreshInvoices");
@@ -76,6 +78,8 @@ const DEFAULT_NAMES = [
   "Zentralglöckner (Sebi)",
 ];
 const SUM_HEADER = "Summe";
+const PAID_HEADER = "Bezahlt";
+const FOOT_LABEL = "Summe";
 
 let sheets = [];
 let activeSheetIndex = 0;
@@ -234,6 +238,9 @@ async function readJsonResponse(response) {
 function clearTable() {
   thead.innerHTML = "";
   tbody.innerHTML = "";
+  if (table.tFoot) {
+    table.tFoot.innerHTML = "";
+  }
 }
 
 /* ---------- Datenformat ----------
@@ -763,7 +770,25 @@ function createSumCell() {
   return cell;
 }
 
-function createDataRow(row, count) {
+function createPaidCell(checked) {
+  const cell = document.createElement("td");
+  cell.className = "paid-cell";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.className = "paid-check";
+  input.checked = Boolean(checked);
+  input.setAttribute("aria-label", PAID_HEADER);
+  input.title = "Bezahlt";
+  cell.appendChild(input);
+  return cell;
+}
+
+// Bezahlt-Status je Datenzeile (Reihenfolge wie tbody)
+function collectPaid() {
+  return Array.from(tbody.rows).map((tr) => Boolean(tr.querySelector("input.paid-check")?.checked));
+}
+
+function createDataRow(row, count, paid = false) {
   const tr = document.createElement("tr");
   tr.appendChild(createNameCell(row[0] ?? ""));
   for (let i = 0; i < count; i += 1) {
@@ -773,10 +798,12 @@ function createDataRow(row, count) {
     );
   }
   tr.appendChild(createSumCell());
+  tr.appendChild(createPaidCell(paid));
+  tr.classList.toggle("is-paid", Boolean(paid));
   return tr;
 }
 
-function buildTable(data) {
+function buildTable(data, paid = sheets[activeSheetIndex]?.paid) {
   clearTable();
   clearCellSelection();
   selectionStart = null;
@@ -805,6 +832,10 @@ function buildTable(data) {
   const sumTh = createFixedHeaderCell(SUM_HEADER);
   sumTh.rowSpan = 3 + prints + (prints ? 1 : 0);
   headRow.appendChild(sumTh);
+  const paidTh = createFixedHeaderCell(PAID_HEADER);
+  paidTh.className = "paid-header";
+  paidTh.rowSpan = sumTh.rowSpan;
+  headRow.appendChild(paidTh);
 
   // Preiszeile: eine Zelle pro Artikel (über Anzahl und Größe)
   const priceTr = document.createElement("tr");
@@ -853,8 +884,8 @@ function buildTable(data) {
   }
   thead.append(headRow, priceTr, ...printTrs, subRow);
 
-  rows.slice(3 + prints).forEach((row) => {
-    tbody.appendChild(createDataRow(row, count));
+  rows.slice(3 + prints).forEach((row, index) => {
+    tbody.appendChild(createDataRow(row, count, Array.isArray(paid) && paid[index]));
   });
 
   applyStoredColumnWidths();
@@ -916,6 +947,7 @@ function updateTotals() {
       sumValue.textContent = hasAnyPrice ? formatCurrency(rowTotals[index] ?? 0) : "";
     }
   });
+  renderTotalRow(data, hasAnyPrice, grand);
   if (grandTotalEl) {
     grandTotalEl.textContent = "";
     if (hasAnyPrice) {
@@ -932,6 +964,42 @@ function updateTotals() {
       grandTotalEl.append(shipping, totalText);
     }
   }
+}
+
+// Summenzeile unten: Anzahl je Artikel, Gesamtzahl, Gesamtsumme, bezahlte Zeilen
+function renderTotalRow(data, hasAnyPrice, grand) {
+  const tfoot = table.tFoot || table.createTFoot();
+  tfoot.innerHTML = "";
+  const count = articleCount(data);
+  const bodyRows = data.slice(dataStart(data));
+  const qtySums = Array.from({ length: count }, (_, i) =>
+    bodyRows.reduce((sum, row) => sum + (parseNumberValue(row[qtyCol(i)]) ?? 0), 0));
+  const totalQty = qtySums.reduce((sum, value) => sum + value, 0);
+
+  const tr = document.createElement("tr");
+  tr.className = "total-row";
+  const label = document.createElement("td");
+  label.className = "total-label";
+  label.textContent = `${FOOT_LABEL} (${totalQty} Artikel)`;
+  tr.appendChild(label);
+  qtySums.forEach((sum) => {
+    const qty = document.createElement("td");
+    qty.className = "num-cell total-qty";
+    qty.textContent = String(sum);
+    const size = document.createElement("td");
+    size.className = "total-size";
+    tr.append(qty, size);
+  });
+  const sumTd = document.createElement("td");
+  sumTd.className = "sum-cell total-sum";
+  sumTd.textContent = hasAnyPrice ? formatCurrency(grand) : "";
+  const paidFlags = collectPaid();
+  const paidTd = document.createElement("td");
+  paidTd.className = "paid-cell total-paid";
+  paidTd.textContent = `${paidFlags.filter(Boolean).length}/${paidFlags.length}`;
+  paidTd.title = "Bezahlte Zeilen";
+  tr.append(sumTd, paidTd);
+  tfoot.appendChild(tr);
 }
 
 /* ---------- Cursor (zuletzt angeklickte Zelle) ---------- */
@@ -1093,7 +1161,10 @@ function moveDataRow(from, to) {
   }
   const [row] = data.splice(start + from, 1);
   data.splice(start + to, 0, row);
-  commitStructure(data, { rowIndex: to, col: currentCell?.col ?? 0 });
+  const paid = collectPaid();
+  const [flag] = paid.splice(from, 1);
+  paid.splice(to, 0, flag);
+  commitStructure(data, { rowIndex: to, col: currentCell?.col ?? 0 }, paid);
   setStatus("Zeile verschoben.");
 }
 
@@ -1369,6 +1440,7 @@ function saveActiveSheet() {
     return;
   }
   sheets[activeSheetIndex].data = collectTableData();
+  sheets[activeSheetIndex].paid = collectPaid();
 }
 
 function isSheetVisibleInSwitcher(sheet, index) {
@@ -1557,11 +1629,12 @@ function addSheet(name) {
   autosave();
 }
 
-function commitStructure(data, focus) {
+function commitStructure(data, focus, paid = collectPaid()) {
   if (sheets[activeSheetIndex]) {
     sheets[activeSheetIndex].data = data;
+    sheets[activeSheetIndex].paid = paid;
   }
-  buildTable(data);
+  buildTable(data, paid);
   if (focus) {
     currentCell = focus;
     markCurrentCell();
@@ -1602,7 +1675,9 @@ function addRow() {
   const dataCount = data.length - start;
   const insertAt = current === null ? dataCount : Math.min(current + 1, dataCount);
   data.splice(start + insertAt, 0, Array(width).fill(""));
-  commitStructure(data, null);
+  const paid = collectPaid();
+  paid.splice(insertAt, 0, false);
+  commitStructure(data, null, paid);
   focusCell(insertAt, 0);
   setStatus(current === null ? "Zeile am Ende hinzugefügt." : "Zeile unterhalb eingefügt.");
 }
@@ -1628,8 +1703,10 @@ function removeRow() {
     return;
   }
   data.splice(start + current, 1);
+  const paid = collectPaid();
+  paid.splice(current, 1);
   const nextRow = Math.min(current, dataCount - 2);
-  commitStructure(data, { rowIndex: nextRow, col: currentCell?.col ?? 0 });
+  commitStructure(data, { rowIndex: nextRow, col: currentCell?.col ?? 0 }, paid);
   setStatus("Zeile gelöscht.");
 }
 
@@ -2841,6 +2918,41 @@ document.addEventListener("copy", (event) => {
   event.clipboardData.setData("text/plain", text);
   event.preventDefault();
 });
+
+// Bezahlt-Häkchen: auch bei abgeschlossener Bestellung änderbar
+table.addEventListener("change", (event) => {
+  const input = event.target instanceof Element ? event.target.closest("input.paid-check") : null;
+  if (!input) {
+    return;
+  }
+  input.closest("tr")?.classList.toggle("is-paid", input.checked);
+  if (sheets[activeSheetIndex]) {
+    sheets[activeSheetIndex].paid = collectPaid();
+  }
+  updateTotals();
+  autosave();
+  setStatus(input.checked ? "Als bezahlt markiert." : "Bezahlt-Markierung entfernt.");
+});
+
+function preparePrint() {
+  const sheet = sheets[activeSheetIndex];
+  if (printTitleEl) {
+    printTitleEl.textContent = sheet ? `${sheet.name}${sheet.locked ? " (abgeschlossen)" : ""}` : "";
+  }
+  if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
+}
+
+function printActiveSheet() {
+  preparePrint();
+  window.print();
+}
+
+if (printSheetButton) {
+  printSheetButton.addEventListener("click", printActiveSheet);
+}
+window.addEventListener("beforeprint", preparePrint);
 
 async function autoload() {
   try {
