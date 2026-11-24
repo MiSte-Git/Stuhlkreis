@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=12" />
+    <link rel="stylesheet" href="styles.css?v=13" />
   </head>
   <body>
     <header class="site-header">
@@ -48,18 +48,20 @@
       <div id="grandTotal" class="meta grand-total"></div>
 
       <section class="sheet" aria-live="polite">
-        <button id="sheetTitle" type="button" class="sheet-title" title="Tabellenblatt umbenennen"></button>
+        <div class="sheet-head">
+          <button id="sheetTitle" type="button" class="sheet-title" title="Tabellenblatt umbenennen"></button>
+          <div class="sheet-add">
+            <button id="addPerson" type="button" class="ghost-btn">＋ Person</button>
+            <button id="addArticle" type="button" class="ghost-btn">＋ Artikel</button>
+          </div>
+        </div>
+        <p class="sheet-hint">Tipp: Über ⋮ bei Name oder Artikel kannst du einfügen, verschieben und löschen.</p>
         <div class="sheet-scroll">
           <table id="sheetTable" class="sheet-table">
             <thead></thead>
             <tbody></tbody>
           </table>
         </div>
-        <div class="sheet-add">
-          <button id="addPerson" type="button" class="ghost-btn">＋ Person</button>
-          <button id="addArticle" type="button" class="ghost-btn">＋ Artikel</button>
-        </div>
-        <p class="sheet-hint">Tipp: Über ⋮ bei Name oder Artikel kannst du einfügen, verschieben und löschen.</p>
       </section>
 
       <section id="invoiceSection" class="panel invoices" aria-label="Rechnungen">
@@ -129,6 +131,6 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
-    <script src="app.js?v=12"></script>
+    <script src="app.js?v=13"></script>
   </body>
 </html>

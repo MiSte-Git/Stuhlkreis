@@ -1583,3 +1583,53 @@ th.drop-target {
 .save-state:empty {
   display: none;
 }
+
+/* Titelzeile: Blattname links, Person/Artikel rechts, Tipp darunter */
+.sheet-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 6px;
+}
+
+.sheet-head .sheet-title {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sheet-head .sheet-add {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.sheet .sheet-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+
+.sheet-head:has(.sheet-title.is-locked) .sheet-add {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .sheet-head {
+    margin: 0 10px 6px;
+  }
+
+  .sheet-head .sheet-title,
+  .sheet-head .sheet-add {
+    margin: 0;
+  }
+
+  .sheet-head .sheet-add {
+    flex: 1 1 100%;
+  }
+
+  .sheet .sheet-hint {
+    margin: 0 10px 10px;
+  }
+}
