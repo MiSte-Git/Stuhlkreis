@@ -1633,3 +1633,10 @@ th.drop-target {
     margin: 0 10px 10px;
   }
 }
+
+/* Excel für die Druckerei */
+.action-printer {
+  width: 100%;
+  background: #6a5f52;
+  white-space: normal;
+}

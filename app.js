@@ -2010,7 +2010,45 @@ function buildExportSheet(sheet) {
   return worksheet;
 }
 
-function downloadWorkbook() {
+// Druckerei-Export: nur Namen, Anzahl und Größe; ohne Preise, Druckpositionen, Summe und Bezahlt.
+// Personen ohne bestellte Artikel werden weggelassen.
+function buildPrinterSheet(sheet) {
+  const data = normalizeSheetData(sheet.data);
+  const count = articleCount(data);
+  const articles = Array.from({ length: count }, (_, i) => i);
+  const width = data[0].length;
+  const hasOrder = (row) => articles.some((i) => (parseNumberValue(row[qtyCol(i)]) ?? 0) > 0);
+  const bodyData = data.slice(dataStart(data)).filter(hasOrder);
+  const toQty = (value) => {
+    const number = parseNumberValue(value);
+    return number === null ? String(value ?? "").trim() : number;
+  };
+
+  const aoa = [];
+  aoa.push([...data[0]]);
+  aoa.push(["", ...articles.flatMap(() => [QTY_LABEL, SIZE_LABEL])]);
+  bodyData.forEach((row) => {
+    aoa.push(row.map((value, col) => (col >= 1 && col % 2 === 1 ? toQty(value) : value)));
+  });
+  const qtySums = articles.map((i) =>
+    bodyData.reduce((sum, row) => sum + (parseNumberValue(row[qtyCol(i)]) ?? 0), 0));
+  const totalRow = Array(width).fill("");
+  totalRow[0] = `${FOOT_LABEL} (${qtySums.reduce((sum, value) => sum + value, 0)} Artikel)`;
+  articles.forEach((i) => {
+    totalRow[qtyCol(i)] = qtySums[i];
+  });
+  aoa.push(totalRow);
+
+  const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+  worksheet["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } },
+    ...articles.map((i) => ({ s: { r: 0, c: qtyCol(i) }, e: { r: 0, c: sizeCol(i) } })),
+  ];
+  worksheet["!cols"] = [{ wch: 30 }, ...Array.from({ length: count * 2 }, () => ({ wch: 10 }))];
+  return worksheet;
+}
+
+function downloadWorkbook(variant = "full") {
   if (typeof XLSX === "undefined" || !XLSX.utils) {
     setStatus("Excel-Bibliothek nicht geladen. Bitte Seite neu laden.");
     return;
@@ -2022,9 +2060,12 @@ function downloadWorkbook() {
   const workbook = XLSX.utils.book_new();
   const used = new Set();
   list.forEach((sheet) => {
-    XLSX.utils.book_append_sheet(workbook, buildExportSheet(sheet), excelSheetName(sheet.name, used));
+    const worksheet = variant === "printer" ? buildPrinterSheet(sheet) : buildExportSheet(sheet);
+    XLSX.utils.book_append_sheet(workbook, worksheet, excelSheetName(sheet.name, used));
   });
-  const filename = buildFilename("xlsx", list);
+  const filename = variant === "printer"
+    ? buildFilename("xlsx", list).replace(/\.xlsx$/, "_Druckerei.xlsx")
+    : buildFilename("xlsx", list);
   if (typeof XLSX.writeFile === "function") {
     XLSX.writeFile(workbook, filename);
   } else {
@@ -2278,6 +2319,11 @@ if (toggleLockButton) {
 
 downloadButton.addEventListener("click", () => {
   downloadWorkbook();
+  closeDialog(exportDialog);
+});
+
+document.getElementById("downloadPrinter")?.addEventListener("click", () => {
+  downloadWorkbook("printer");
   closeDialog(exportDialog);
 });
 
