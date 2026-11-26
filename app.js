@@ -1498,7 +1498,8 @@ function saveActiveSheet() {
 }
 
 function isSheetVisibleInSwitcher(sheet, index) {
-  return index === activeSheetIndex || !sheet.locked || showLockedSheets;
+  // Alle Blätter stehen in der Auswahl, abgeschlossene mit Schloss
+  return true;
 }
 
 function renderSheetSelect() {
@@ -1535,6 +1536,7 @@ function renderSheetSelect() {
 
 function renderTabs() {
   const sheet = sheets[activeSheetIndex];
+  rememberActiveSheet();
   if (sheetTitleEl) {
     sheetTitleEl.textContent = sheet ? sheet.name : "";
     sheetTitleEl.classList.toggle("is-locked", Boolean(sheet?.locked));
@@ -1579,6 +1581,31 @@ if (showLockedCheckbox) {
     writeShowLocked(showLockedSheets);
     renderSheetSelect();
   });
+}
+
+const LAST_SHEET_KEY = "stuhlkreis.lastSheet";
+
+function rememberActiveSheet() {
+  try {
+    const name = sheets[activeSheetIndex]?.name;
+    if (name) {
+      window.localStorage.setItem(LAST_SHEET_KEY, name);
+    }
+  } catch (error) {
+    // ignore storage errors
+  }
+}
+
+// Beim Öffnen: zuletzt benutztes Blatt (auf diesem Gerät), sonst das letzte in der Liste
+function preferredSheetIndex() {
+  let name = null;
+  try {
+    name = window.localStorage.getItem(LAST_SHEET_KEY);
+  } catch (error) {
+    name = null;
+  }
+  const index = name ? sheets.findIndex((sheet) => sheet.name === name) : -1;
+  return index >= 0 ? index : Math.max(0, sheets.length - 1);
 }
 
 function firstUnlockedIndex() {
@@ -3194,17 +3221,6 @@ function openSheetMenu() {
     { label: "＋ Neues Tabellenblatt", run: () => addSheet() },
     { label: "📥 Excel importieren", run: () => fileInput.click() },
     {
-      label: showLockedSheets
-        ? "Abgeschlossene ausblenden"
-        : `Abgeschlossene anzeigen${lockedCount ? ` (${lockedCount})` : ""}`,
-      disabled: !lockedCount && !showLockedSheets,
-      run: () => {
-        showLockedSheets = !showLockedSheets;
-        writeShowLocked(showLockedSheets);
-        renderSheetSelect();
-      },
-    },
-    {
       label: "🗑 Tabellenblatt löschen",
       danger: true,
       disabled: locked || sheets.length <= 1,
@@ -3270,7 +3286,7 @@ async function autoload() {
     const response = await fetch("api/load.php");
     const result = await readJsonResponse(response);
     if (!result.ok || result.data.status !== "ok") {
-      return;
+      return false;
     }
     if (Array.isArray(result.data.sheets) && result.data.sheets.length) {
       sheets = result.data.sheets.map((sheet) => ({
@@ -3278,20 +3294,28 @@ async function autoload() {
         locked: Boolean(sheet.locked),
         data: normalizeSheetData(sheet.data || []),
       }));
-      activeSheetIndex = showLockedSheets ? 0 : firstUnlockedIndex();
+      activeSheetIndex = preferredSheetIndex();
       buildTable(sheets[activeSheetIndex].data);
       renderTabs();
       setLastSaved(result.data.updated_at);
-      setStatus("Daten geladen.");
+      return true;
     }
   } catch (error) {
     console.error(error);
   }
+  return false;
 }
 
+// Leeres Startblatt nur zeigen, wenn noch nichts gespeichert ist
 sheets = [{ name: "Sheet 1", data: createEmptyData(), locked: false }];
 activeSheetIndex = 0;
-buildTable(sheets[0].data);
-renderTabs();
-autoload();
+if (sheetTitleEl) {
+  sheetTitleEl.textContent = "Lädt …";
+}
+autoload().then((loaded) => {
+  if (!loaded) {
+    buildTable(sheets[0].data);
+    renderTabs();
+  }
+});
 fetchInvoices();
